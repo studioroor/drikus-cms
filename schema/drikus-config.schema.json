@@ -1,0 +1,409 @@
+{
+  "$id": "https://github.com/studioroor/drikus-cms/raw/main/schema/drikus-config.schema.json",
+  "title": "Drikus CMS configuration (.drikus/config.yml)",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "collections": {
+      "minItems": 1,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "nl": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "en": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                }
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "nl": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "en": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                }
+              }
+            ]
+          },
+          "folder": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^[A-Za-z0-9._\\-/]+$"
+          },
+          "file": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^[A-Za-z0-9._\\-/]+$"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "md",
+              "mdx",
+              "json",
+              "yaml"
+            ]
+          },
+          "slug": {
+            "default": "{{title}}",
+            "type": "string",
+            "maxLength": 200
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+          },
+          "sortBy": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+          },
+          "sortOrder": {
+            "default": "asc",
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "create": {
+            "default": true,
+            "type": "boolean"
+          },
+          "delete": {
+            "default": true,
+            "type": "boolean"
+          },
+          "fields": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "fields"
+        ]
+      }
+    },
+    "media": {
+      "type": "object",
+      "properties": {
+        "folder": {
+          "type": "string",
+          "maxLength": 300,
+          "pattern": "^[A-Za-z0-9._\\-/]+$"
+        },
+        "publicPath": {
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "required": [
+        "folder"
+      ]
+    }
+  },
+  "required": [
+    "collections"
+  ],
+  "$defs": {
+    "__schema0": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 200
+            },
+            {
+              "type": "object",
+              "properties": {
+                "nl": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "en": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
+          ]
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 200
+            },
+            {
+              "type": "object",
+              "properties": {
+                "nl": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "en": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
+          ]
+        },
+        "type": {
+          "default": "string",
+          "type": "string",
+          "enum": [
+            "string",
+            "text",
+            "markdown",
+            "richtext",
+            "number",
+            "boolean",
+            "date",
+            "datetime",
+            "select",
+            "image",
+            "file",
+            "url",
+            "color",
+            "list",
+            "object",
+            "blocks",
+            "reference",
+            "hidden"
+          ]
+        },
+        "required": {
+          "default": false,
+          "type": "boolean"
+        },
+        "default": {},
+        "maxLength": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "step": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "options": {
+          "maxItems": 500,
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "nl": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "en": {
+                            "type": "string",
+                            "maxLength": 200
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "label",
+                  "value"
+                ]
+              }
+            ]
+          }
+        },
+        "multiple": {
+          "type": "boolean"
+        },
+        "collection": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+        },
+        "fields": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          }
+        },
+        "field": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "minItems": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maxItems": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "blocks": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+              },
+              "label": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "nl": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "en": {
+                        "type": "string",
+                        "maxLength": 200
+                      }
+                    }
+                  }
+                ]
+              },
+              "hint": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "nl": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "en": {
+                        "type": "string",
+                        "maxLength": 200
+                      }
+                    }
+                  }
+                ]
+              },
+              "fields": {
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/__schema0"
+                }
+              }
+            },
+            "required": [
+              "name",
+              "fields"
+            ]
+          }
+        },
+        "typeKey": {
+          "default": "type",
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  }
+}

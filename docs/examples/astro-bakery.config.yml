@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://github.com/studioroor/drikus-cms/raw/main/schema/drikus-config.schema.json
+#
+# Example .drikus/config.yml for a small Astro site.
+collections:
+  # A folder collection: one Markdown file per news post (src/content/posts/<slug>.md).
+  - name: posts
+    label: { nl: Nieuws, en: News }
+    description: { nl: Berichten op de nieuwspagina, en: Posts on the news page }
+    folder: src/content/posts
+    slug: "{{year}}-{{title}}"
+    sortBy: date
+    sortOrder: desc
+    fields:
+      - { name: title, label: Titel, required: true }
+      - { name: date, label: Datum, type: date, required: true }
+      - { name: category, label: Categorie, type: select, options: [Brood, Taart, Nieuws] }
+      - { name: cover, label: Afbeelding, type: image }
+      - { name: tags, type: list, field: { name: tag } }
+      - { name: draft, label: Verborgen, type: boolean, hint: Niet tonen op de website }
+      # In Markdown files, "body" is the text below the frontmatter.
+      - { name: body, label: Tekst, type: richtext }
+
+  # A single file: the homepage, built from reorderable blocks.
+  - name: home
+    label: Homepage
+    file: src/content/pages/home.json
+    fields:
+      - { name: heading, label: Kop, required: true }
+      - name: sections
+        label: Onderdelen
+        type: blocks
+        blocks:
+          - name: hero
+            label: Grote banner
+            fields:
+              - { name: heading, label: Kop }
+              - { name: image, label: Afbeelding, type: image }
+          - name: faq
+            label: Veelgestelde vragen
+            fields:
+              - name: items
+                label: Vragen
+                type: list
+                fields:
+                  - { name: q, label: Vraag }
+                  - { name: a, label: Antwoord, type: text }
+
+  # Site-wide settings in a YAML data file.
+  - name: settings
+    label: Instellingen
+    file: src/data/settings.yaml
+    fields:
+      - { name: phone, label: Telefoon }
+      - { name: brandColor, label: Huisstijlkleur, type: color }
+      - { name: openSunday, label: Open op zondag, type: boolean }
+      - { name: featured, label: Uitgelicht bericht, type: reference, collection: posts }
+      - name: address
+        label: Adres
+        type: object
+        fields:
+          - { name: street, label: Straat }
+          - { name: city, label: Plaats }

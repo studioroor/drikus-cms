@@ -102,6 +102,38 @@ export const gitBlobs = sqliteTable('git_blobs', {
   createdAt: timestamp('created_at'),
 })
 
+export const DRAFT_ACTIONS = ['upsert', 'delete'] as const
+export type DraftAction = (typeof DRAFT_ACTIONS)[number]
+
+/**
+ * Unpublished changes, one row per file. Shared by everyone editing the site
+ * (last save wins). Publishing turns all of a site's drafts into one commit.
+ */
+export const drafts = sqliteTable(
+  'drafts',
+  {
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    collection: text('collection').notNull(),
+    slug: text('slug').notNull(),
+    action: text('action', { enum: DRAFT_ACTIONS }).notNull(),
+    // Structured data as edited (null for deletions).
+    data: text('data', { mode: 'json' }).$type<Record<string, unknown>>(),
+    // The serialized file content to commit (null for deletions).
+    content: text('content'),
+    // Blob SHA of the published file the draft started from; null for new files.
+    baseSha: text('base_sha'),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at'),
+    updatedAt: timestamp('updated_at'),
+  },
+  (t) => [primaryKey({ columns: [t.siteId, t.path] })],
+)
+
+export type Draft = typeof drafts.$inferSelect
+
 export interface TreeEntry {
   path: string
   type: 'blob' | 'tree' | 'commit'

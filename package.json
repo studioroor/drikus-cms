@@ -15,7 +15,8 @@
     "test": "bun test",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "biome check .",
-    "format": "biome check --write ."
+    "format": "biome check --write .",
+    "schema": "bun run --cwd apps/server schema"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.2"
