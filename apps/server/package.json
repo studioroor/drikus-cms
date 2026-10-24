@@ -1,0 +1,27 @@
+{
+  "name": "@drikus/server",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./app": "./src/app.ts"
+  },
+  "scripts": {
+    "dev": "PUBLIC_URL=http://localhost:5173 bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "cli": "bun src/cli.ts",
+    "db:generate": "drizzle-kit generate",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.9.1",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.13",
+    "otpauth": "^9.5.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "drizzle-kit": "^0.31.11",
+    "typescript": "^7.0.2"
+  }
+}

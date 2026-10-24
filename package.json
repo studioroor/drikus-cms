@@ -1,0 +1,23 @@
+{
+  "name": "drikus-cms",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "bun run --parallel dev:server dev:web",
+    "dev:server": "bun run --cwd apps/server dev",
+    "dev:web": "bun run --cwd apps/web dev",
+    "build": "bun run --filter @drikus/web build",
+    "start": "bun run --cwd apps/server start",
+    "cli": "bun run --cwd apps/server cli",
+    "test": "bun test",
+    "typecheck": "bun run --filter '*' typecheck",
+    "lint": "biome check .",
+    "format": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.2"
+  }
+}

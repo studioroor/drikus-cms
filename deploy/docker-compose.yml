@@ -1,0 +1,17 @@
+# Synology (Container Manager → Project) or any Docker host.
+# Put this file in e.g. /volume1/docker/drikus-cms and create a `data` folder next to it.
+services:
+  drikus-cms:
+    image: ghcr.io/studioroor/drikus-cms:latest
+    container_name: drikus-cms
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PUBLIC_URL: https://cms.example.com
+      # The Synology reverse proxy (Login Portal → Advanced → Reverse Proxy) sets X-Forwarded-For.
+      TRUST_PROXY: "true"
+    volumes:
+      - ./data:/data
+    # The image runs as uid 1000. If your data folder is owned by another user,
+    # either chown it to 1000 or set `user: "<uid>:<gid>"` here.
