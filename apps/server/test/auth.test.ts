@@ -59,6 +59,23 @@ describe('login', () => {
     expect(res.status).toBe(429)
   })
 
+  test('behind a proxy, a forged X-Forwarded-For does not dodge the per-IP limit', async () => {
+    const ctx = setup({ trustProxy: true })
+    const c = ctx.client()
+    const attempt = (i: number, proxySaw: string) =>
+      c.post(
+        '/api/auth/login',
+        { email: `guess${i}@bakkerij.nl`, password: 'wrong-password' },
+        // The client sends its own header; the proxy appends the address it saw.
+        { 'x-forwarded-for': `10.0.0.${i}, ${proxySaw}` },
+      )
+    // 30 attempts per IP per 15 minutes, each on a different account.
+    for (let i = 0; i < 30; i++) expect((await attempt(i, '203.0.113.7')).status).toBe(401)
+    expect((await attempt(30, '203.0.113.7')).status).toBe(429)
+    // Another real client is not affected.
+    expect((await attempt(31, '198.51.100.2')).status).toBe(401)
+  })
+
   test('rejects disabled users', async () => {
     const ctx = setup()
     const admin = await adminClient(ctx)

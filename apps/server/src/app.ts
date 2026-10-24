@@ -10,7 +10,9 @@ import { siteRoutes } from './routes/sites'
 
 function clientIp(c: Context<AppEnv>, trustProxy: boolean) {
   if (trustProxy) {
-    const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
+    // Proxies append the address they saw. Earlier entries come from the
+    // client and can be anything, so only the last one (our proxy's) counts.
+    const forwarded = c.req.header('x-forwarded-for')?.split(',').at(-1)?.trim()
     if (forwarded) return forwarded
   }
   try {

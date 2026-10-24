@@ -70,27 +70,28 @@ The image is published to `ghcr.io/studioroor/drikus-cms` by CI on every push to
 - `secret.key` encrypts secrets such as 2FA seeds. **Back it up together with the database.**
 - `backups/` holds the daily snapshots (see [Backups](#backups)).
 
-| Variable                      | Default                      |                                                                    |
-| ----------------------------- | ---------------------------- | ------------------------------------------------------------------ |
-| `PUBLIC_URL`                  | `http://localhost:3000`      | Public address; used for invite links and CSRF origin checks       |
-| `DATA_DIR`                    | `./data` (`/data` in Docker) | Database and key location                                          |
-| `PORT`                        | `3000`                       |                                                                    |
-| `TRUST_PROXY`                 | `false`                      | Set `true` behind a reverse proxy so rate limiting sees client IPs |
-| `SECRET_KEY`                  | generated                    | Optional base64 32-byte key instead of `secret.key`                |
-| `REQUIRE_ADMIN_2FA`           | `true`                       | Set `false` to make two-step verification optional for superadmins |
-| `BACKUP_KEEP`                 | `7`                          | Daily database snapshots to keep; `0` turns them off               |
-| `BACKUP_DIR`                  | `$DATA_DIR/backups`          | Where the snapshots go                                             |
-| `GITHUB_APP_ID`               | unset                        | Enables the GitHub integration                                     |
-| `GITHUB_APP_PRIVATE_KEY_FILE` | `$DATA_DIR/github-app.pem`   | Private key of the GitHub App                                      |
-| `GITHUB_APP_PRIVATE_KEY`      | unset                        | Alternative: the key as PEM text or base64 (e.g. for Fly secrets)  |
-| `GITHUB_WEBHOOK_SECRET`       | unset                        | Enables `/api/github/webhook`; without it the CMS polls GitHub     |
-| `GITHUB_ORG`                  | `studioroor`                 | Account the app is installed on                                    |
+| Variable                      | Default                      |                                                                      |
+| ----------------------------- | ---------------------------- | -------------------------------------------------------------------- |
+| `PUBLIC_URL`                  | `http://localhost:3000`      | Public address; used for invite links and CSRF origin checks         |
+| `DATA_DIR`                    | `./data` (`/data` in Docker) | Database and key location                                            |
+| `PORT`                        | `3000`                       |                                                                      |
+| `TRUST_PROXY`                 | `false`                      | Set `true` behind one reverse proxy so rate limiting sees client IPs |
+| `SECRET_KEY`                  | generated                    | Optional base64 32-byte key instead of `secret.key`                  |
+| `REQUIRE_ADMIN_2FA`           | `true`                       | Set `false` to make two-step verification optional for superadmins   |
+| `BACKUP_KEEP`                 | `7`                          | Daily database snapshots to keep; `0` turns them off                 |
+| `BACKUP_DIR`                  | `$DATA_DIR/backups`          | Where the snapshots go                                               |
+| `GITHUB_APP_ID`               | unset                        | Enables the GitHub integration                                       |
+| `GITHUB_APP_PRIVATE_KEY_FILE` | `$DATA_DIR/github-app.pem`   | Private key of the GitHub App                                        |
+| `GITHUB_APP_PRIVATE_KEY`      | unset                        | Alternative: the key as PEM text or base64 (e.g. for Fly secrets)    |
+| `GITHUB_WEBHOOK_SECRET`       | unset                        | Enables `/api/github/webhook`; without it the CMS polls GitHub       |
+| `GITHUB_ORG`                  | `studioroor`                 | Account the app is installed on                                      |
 
 **Synology:** copy [`deploy/docker-compose.yml`](deploy/docker-compose.yml) into a Container
 Manager project, set `PUBLIC_URL`, and point a reverse proxy rule (with HTTPS) at port 3000.
 
 **Fly.io:** see the comments in [`deploy/fly.toml`](deploy/fly.toml). Run exactly one machine
-with one volume, because SQLite is a single file.
+with one volume, because SQLite is a single file: deploy with `--ha=false`, and check
+`fly machines list`. A second machine would have its own, separate database.
 
 **Admin CLI in Docker:** `docker exec -it drikus-cms drikus help`. It can create admins, print
 invite/reset links, reset 2FA, enable or disable users, and make or list backups.
@@ -122,6 +123,33 @@ Copy the snapshots somewhere else:
 4. Start the CMS. Migrations bring an older snapshot up to date.
 
 Drafts and uploads made after the snapshot are lost. Published content is in Git and isn't affected.
+
+## Moving to another host
+
+Everything lives in `/data`, so moving (for example from Fly.io to a Synology) means taking a fresh
+snapshot along:
+1. **Ask editors to publish or finish their changes**, then make a snapshot on the old host and
+   download it with the key. On Fly.io:
+
+   ```sh
+   fly ssh console -c deploy/fly.toml -C "drikus backup"
+   fly ssh sftp get /data/backups/<newest>.db drikus.db -c deploy/fly.toml
+   fly ssh sftp get /data/secret.key secret.key -c deploy/fly.toml
+   ```
+
+   (Skip `secret.key` if you use `SECRET_KEY`; set the same value on the new host.)
+2. **New host:** put `drikus.db` and `secret.key` in its `data` folder (for Synology, next to
+   `docker-compose.yml`), together with the GitHub App key as `github-app.pem`, or keep using
+   `GITHUB_APP_PRIVATE_KEY`. Set the same `GITHUB_APP_ID` and `GITHUB_WEBHOOK_SECRET`, plus the new
+   `PUBLIC_URL` and `TRUST_PROXY=true`. Start it and check `/api/health` and the log.
+3. **Synology:** add a reverse proxy rule (_Control Panel → Login Portal → Advanced → Reverse
+   Proxy_) from `https://<your domain>:443` to `http://localhost:3000`, with a certificate for the
+   domain (_Security → Certificate_).
+4. **GitHub App:** change the webhook URL (and the homepage URL) to the new `PUBLIC_URL`. Check
+   _Advanced → Recent deliveries_ after the next publish.
+5. **DNS:** point the domain at the new host. If the address changed, everyone logs in again
+   (sessions belong to a domain), and invite links made before the move point to the old one.
+6. Stop the old host once everything works (`fly scale count 0`), and remove it after a week or so.
 
 ## GitHub App setup
 
