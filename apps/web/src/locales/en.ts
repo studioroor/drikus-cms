@@ -184,6 +184,7 @@ export const en: Messages = {
     addPhotos: 'Add photos',
     add: 'Add',
     removeN: 'Remove {{count}}',
+    notAdded: '{{count}} not added: the list is full',
     moveLeft: 'Move left',
     moveRight: 'Move right',
     moveStart: 'Move to start',

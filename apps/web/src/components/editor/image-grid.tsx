@@ -64,6 +64,8 @@ export function ImageGrid({
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [pending, setPending] = useState(0)
   const [errors, setErrors] = useState<{ id: string; text: string }[]>([])
+  /** Picked or dropped photos that didn't fit under maxItems. */
+  const [notAdded, setNotAdded] = useState(0)
 
   // Uploads finish one by one after renders; they append to the latest list through the
   // latest change handler (an old one would write back the entry as it was at drop time).
@@ -83,17 +85,23 @@ export function ImageGrid({
 
   const append = (items: string[]) => {
     const before = latest.current
-    const { list, added } = appendUpTo<unknown>(before, items, max)
-    if (!added || !mounted.current) return
+    const { list, added, dropped } = appendUpTo<unknown>(before, items, max)
+    if (!mounted.current) return
+    if (dropped) setNotAdded((n) => n + dropped)
+    if (!added) return
     for (let i = 0; i < added; i++) idsFor(path, before.length + i).insert(before.length + i)
     latest.current = list
     onChangeRef.current(list)
   }
   const uploadFiles = async (files: File[]) => {
     setErrors([])
+    setNotAdded(0)
     for (const [n, file] of files.entries()) {
       if (!mounted.current) return
-      if (max !== undefined && latest.current.length >= max) break
+      if (max !== undefined && latest.current.length >= max) {
+        setNotAdded((d) => d + files.length - n)
+        break
+      }
       setPending(files.length - n)
       try {
         const item = await upload.mutateAsync(file)
@@ -154,6 +162,9 @@ export function ImageGrid({
             <div className="flex flex-wrap items-center gap-2 border-b border-stone-200 px-3 py-2">
               <span className="flex items-center gap-2 text-sm font-medium text-stone-800">
                 {label(field.label, field.name)}
+                {field.required && (
+                  <span className="text-xs font-normal text-stone-400">{t('editor.required')}</span>
+                )}
                 <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-600">
                   {max !== undefined ? `${value.length} / ${max}` : value.length}
                 </span>
@@ -204,6 +215,9 @@ export function ImageGrid({
               {errors.map((e) => (
                 <Alert key={e.id}>{e.text}</Alert>
               ))}
+              {notAdded > 0 && (
+                <Alert tone="info">{t('media.notAdded', { count: notAdded })}</Alert>
+              )}
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}>
                 <SortableContext items={ids.ids} strategy={rectSortingStrategy}>
                   <ul className="grid grid-cols-3 gap-2 @lg:grid-cols-6">
@@ -276,7 +290,10 @@ export function ImageGrid({
         current={srcs}
         open={picking === 'add'}
         onClose={() => setPicking(null)}
-        onSelectMany={append}
+        onSelectMany={(items) => {
+          setNotAdded(0)
+          append(items)
+        }}
       />
       <MediaPicker
         siteId={siteId}

@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react'
-import { useContext, useState } from 'react'
+import { type ReactNode, useContext, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -12,6 +12,35 @@ import { useListIds } from './list-ids'
 import { ListNavContext } from './list-nav'
 
 type Block = NonNullable<FieldDef['blocks']>[number]
+
+/**
+ * Adding to a list or blocks field: blocks first ask for a type (render `picker`), then
+ * `append` gets the new item with its block's defaults.
+ */
+export function useAddItem(
+  field: FieldDef,
+  append: (item: unknown) => void,
+): { add: () => void; picker: ReactNode } {
+  const { t } = useTranslation()
+  const [picking, setPicking] = useState(false)
+  const add = () => (field.type === 'blocks' ? setPicking(true) : append({}))
+  const addBlock = (block: Block) => {
+    const initial: Data = { [field.typeKey]: block.name }
+    for (const f of block.fields) if (f.default !== undefined) initial[f.name] = f.default
+    setPicking(false)
+    append(initial)
+  }
+  const picker = picking && (
+    <Dialog open onClose={() => setPicking(false)} title={t('editor.addBlock')}>
+      <BlockPicker
+        blocks={field.blocks ?? []}
+        onPick={addBlock}
+        onCancel={() => setPicking(false)}
+      />
+    </Dialog>
+  )
+  return { add, picker }
+}
 
 /**
  * A list inside the item open in a list editor's pane: compact rows that drill in, so only
@@ -32,22 +61,14 @@ export function NestedRows({
   const { readOnly } = useEditor()
   const nav = useContext(ListNavContext)
   const ids = useListIds(path, value.length)
-  const [picking, setPicking] = useState(false)
   const full = field.maxItems !== undefined && value.length >= field.maxItems
 
   const open = (i: number) => nav?.select(`${path}.${i}`, 'push')
-  const append = (item: unknown) => {
+  const { add, picker } = useAddItem(field, (item) => {
     ids.insert(value.length)
     onChange([...value, item])
-    open(value.length)
-  }
-  const add = () => (field.type === 'blocks' ? setPicking(true) : append({}))
-  const addBlock = (block: Block) => {
-    const initial: Data = { [field.typeKey]: block.name }
-    for (const f of block.fields) if (f.default !== undefined) initial[f.name] = f.default
-    setPicking(false)
-    append(initial)
-  }
+    nav?.select(`${path}.${value.length}`, 'push', { focus: true })
+  })
   const moveItem = (from: number, to: number) => {
     ids.move(from, to)
     onChange(move(value, from, to))
@@ -77,15 +98,7 @@ export function NestedRows({
           {field.type === 'blocks' ? t('editor.addBlock') : t('editor.add')}
         </Button>
       )}
-      {picking && (
-        <Dialog open onClose={() => setPicking(false)} title={t('editor.addBlock')}>
-          <BlockPicker
-            blocks={field.blocks ?? []}
-            onPick={addBlock}
-            onCancel={() => setPicking(false)}
-          />
-        </Dialog>
-      )}
+      {picker}
     </div>
   )
 }

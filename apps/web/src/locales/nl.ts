@@ -185,6 +185,7 @@ export const nl = {
     addPhotos: "Foto's toevoegen",
     add: 'Toevoegen',
     removeN: '{{count}} weghalen',
+    notAdded: '{{count}} niet toegevoegd: de lijst is vol',
     moveLeft: 'Naar links',
     moveRight: 'Naar rechts',
     moveStart: 'Naar het begin',

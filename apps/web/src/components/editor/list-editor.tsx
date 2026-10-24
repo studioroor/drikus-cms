@@ -3,11 +3,10 @@ import { ArrowUpDown, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-rea
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import { Dialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/field'
 import { Toast } from '@/components/ui/toast'
 import { cn } from '@/lib/cn'
-import { type Data, type FieldDef, useLabel } from '@/lib/content'
+import { type FieldDef, useLabel } from '@/lib/content'
 import {
   asObject,
   type ChainLevel,
@@ -19,12 +18,12 @@ import {
 } from '@/lib/list'
 import { useContainerWidth } from '@/lib/use-container-width'
 import { useEditor } from './context'
-import { BlockPicker, FieldList } from './fields'
+import { FieldList } from './fields'
 import { ItemIndex, useItemLabeler } from './item-index'
 import { useListIds, useListIdsFor } from './list-ids'
 import { ListNavContext } from './list-nav'
+import { useAddItem } from './nested-rows'
 
-type Block = NonNullable<FieldDef['blocks']>[number]
 type Mode = 'push' | 'replace'
 
 /** Below this container width the index and the item take turns instead of sitting side by side. */
@@ -79,7 +78,6 @@ export function ListEditor({
   const pane = useRef<HTMLDivElement>(null)
   const wide = useContainerWidth(root) >= WIDE
   const [search, setSearch] = useState('')
-  const [picking, setPicking] = useState(false)
   const [removed, setRemoved] = useState<{
     item: unknown
     listPath: string
@@ -88,7 +86,8 @@ export function ListEditor({
     seq: number
   } | null>(null)
   const removals = useRef(0)
-  const focusNew = useRef(false)
+  /** The item whose first input to focus once its form shows (a just-added item). */
+  const focusNew = useRef<string | null>(null)
 
   // The URL holds one selection for the whole form. While it points into this list it wins;
   // while it points into another list, this one keeps what was last selected here.
@@ -99,7 +98,8 @@ export function ListEditor({
 
   // Replace for selecting, previous/next, reorder and delete; push for drilling and crumbs,
   // so Back steps out one level instead of through every click.
-  const select = (next: string | null, mode: Mode) => {
+  const select = (next: string | null, mode: Mode, options?: { focus?: boolean }) => {
+    if (options?.focus) focusNew.current = next
     setLocal(next)
     if (next === null && ours === null) return
     void navigate({
@@ -133,25 +133,19 @@ export function ListEditor({
   }
   const nav = { select, moved: dropUndoUnder }
 
+  // Wait until the new item's form shows (the URL catches up a render later), then focus.
+  const shown = level ? itemPathOf(level) : null
   useEffect(() => {
-    if (!focusNew.current) return
-    focusNew.current = false
+    if (!focusNew.current || focusNew.current !== shown) return
+    focusNew.current = null
     pane.current?.querySelector<HTMLElement>(FIRST_INPUT)?.focus()
   })
 
-  const append = (item: unknown) => {
+  const { add, picker } = useAddItem(field, (item) => {
     ids.insert(value.length)
     onChange([...value, item])
-    select(`${path}.${value.length}`, 'replace')
-    focusNew.current = true
-  }
-  const add = () => (field.type === 'blocks' ? setPicking(true) : append({}))
-  const addBlock = (block: Block) => {
-    const initial: Data = { [field.typeKey]: block.name }
-    for (const f of block.fields) if (f.default !== undefined) initial[f.name] = f.default
-    setPicking(false)
-    append(initial)
-  }
+    select(`${path}.${value.length}`, 'replace', { focus: true })
+  })
 
   const moveIn = (listPath: string, items: unknown[], from: number, to: number) => {
     if (from === to || to < 0 || to >= items.length) return
@@ -221,11 +215,15 @@ export function ListEditor({
       <div className="sticky top-16 z-[5] flex flex-wrap items-center gap-2 rounded-t-xl border-b border-stone-200 bg-white/95 px-3 py-2 backdrop-blur">
         <span className="flex items-center gap-2 text-sm font-medium text-stone-800">
           {listLabel}
+          {field.required && (
+            <span className="text-xs font-normal text-stone-400">{t('editor.required')}</span>
+          )}
           <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-600">
             {value.length}
           </span>
         </span>
-        {value.length > 0 && (
+        {/* Narrow with an item open, the index it filters is hidden. */}
+        {value.length > 0 && (wide || level === null) && (
           <Input
             type="search"
             className="h-9 min-w-32 flex-1"
@@ -233,6 +231,8 @@ export function ListEditor({
             placeholder={t('editor.searchItems')}
             aria-label={t('editor.searchItems')}
             onChange={(e) => setSearch(e.target.value)}
+            // On a new entry the editor is a form; Enter here must not submit it.
+            onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
           />
         )}
         <div className="ml-auto">{addButton}</div>
@@ -269,15 +269,7 @@ export function ListEditor({
         </div>
       )}
 
-      {picking && (
-        <Dialog open onClose={() => setPicking(false)} title={t('editor.addBlock')}>
-          <BlockPicker
-            blocks={field.blocks ?? []}
-            onPick={addBlock}
-            onCancel={() => setPicking(false)}
-          />
-        </Dialog>
-      )}
+      {picker}
       {removed && (
         <Toast
           key={removed.seq}

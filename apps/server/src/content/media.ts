@@ -308,9 +308,7 @@ export class MediaService {
     const config = await this.content.config()
     const files = await this.content.files()
     const owned = (path: string) =>
-      config.collections.some((c) =>
-        c.folder ? slugForPath(c, path) !== null : path === c.file,
-      )
+      config.collections.some((c) => (c.folder ? slugForPath(c, path) !== null : path === c.file))
     const paths = [...files.keys()].filter(owned)
     const texts: string[] = []
     let complete = true

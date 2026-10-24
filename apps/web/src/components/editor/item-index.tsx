@@ -173,8 +173,10 @@ function Row({
         <button
           type="button"
           className="cursor-grab touch-none self-stretch rounded-l-lg px-1 text-stone-400 hover:text-stone-700 active:cursor-grabbing"
+          title={t('media.reorder')}
           {...attributes}
           {...listeners}
+          aria-label={t('media.reorder')}
         >
           <GripVertical className="size-4" />
         </button>
