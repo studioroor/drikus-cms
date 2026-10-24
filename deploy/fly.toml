@@ -1,0 +1,34 @@
+# Fly.io: `fly launch --copy-config --no-deploy -c deploy/fly.toml`, then
+# `fly volumes create drikus_data --size 1` and `fly deploy -c deploy/fly.toml`.
+app = "drikus-cms"
+primary_region = "ams"
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[env]
+  PUBLIC_URL = "https://drikus-cms.fly.dev"
+  TRUST_PROXY = "true"
+
+[mounts]
+  source = "drikus_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # SQLite lives on a single volume: run exactly one machine.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/api/health"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
