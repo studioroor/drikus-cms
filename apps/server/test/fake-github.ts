@@ -9,6 +9,13 @@ interface FakeRepo {
   branches: Map<string, { commitSha: string; treeSha: string }>
 }
 
+interface FakeCommit {
+  tree: string
+  parents: string[]
+  message: string
+  author: { name: string; email: string; date?: string }
+}
+
 interface IssuedToken {
   repoIds: number[] | null
   permissions: Record<string, string>
@@ -43,10 +50,10 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
     tokens: new Map<string, IssuedToken>(),
     tokenRequests: [] as IssuedToken[],
     requests: [] as string[],
-    commits: new Map<
-      string,
-      { tree: string; parents: string[]; message: string; author: { name: string; email: string } }
-    >(),
+    /** Commits created through the API. */
+    commits: new Map<string, FakeCommit>(),
+    /** Commits pushed directly with `commit()`. */
+    pushed: new Map<string, FakeCommit>(),
     checkRuns: new Map<
       string,
       { name: string; status: string; conclusion: string | null; details_url: string | null }[]
@@ -63,7 +70,13 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
     return Object.fromEntries(entries.map((e) => [e.path, state.blobs.get(e.sha) ?? '']))
   }
 
-  function commit(repoId: number, branch: string, files: Record<string, string>) {
+  /** Pushes a commit whose tree is exactly `files` (on top of the branch's current head). */
+  function commit(
+    repoId: number,
+    branch: string,
+    files: Record<string, string>,
+    meta: { message?: string; author?: string; date?: string } = {},
+  ) {
     const repo = state.repos.get(repoId)
     if (!repo) throw new Error(`no repo ${repoId}`)
     const entries: TreeEntry[] = Object.entries(files).map(([path, content]) => {
@@ -74,8 +87,36 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
     const treeSha = gitSha('tree', JSON.stringify(entries))
     state.trees.set(treeSha, entries)
     const commitSha = gitSha('commit', `${treeSha}${Date.now()}${Math.random()}`)
+    const parent = repo.branches.get(branch)?.commitSha
+    const name = meta.author ?? 'Drikus'
+    state.pushed.set(commitSha, {
+      tree: treeSha,
+      parents: parent ? [parent] : [],
+      message: meta.message ?? 'Update',
+      author: { name, email: `${name.toLowerCase()}@example.com`, date: meta.date },
+    })
     repo.branches.set(branch, { commitSha, treeSha })
     return { commitSha, treeSha }
+  }
+
+  const commitOf = (sha: string) => state.commits.get(sha) ?? state.pushed.get(sha)
+
+  const blobAt = (treeSha: string | undefined, path: string) =>
+    (treeSha ? state.trees.get(treeSha) : undefined)?.find((e) => e.path === path)?.sha ?? null
+
+  /** Like `git log --first-parent <ref> -- <path>`. */
+  function fileLog(ref: string, path: string) {
+    const log: string[] = []
+    for (let sha: string | undefined = ref; sha; ) {
+      const c = commitOf(sha)
+      if (!c) break
+      const parent = c.parents[0]
+      if (blobAt(c.tree, path) !== blobAt(parent && commitOf(parent)?.tree, path)) {
+        log.push(sha)
+      }
+      sha = parent
+    }
+    return log
   }
 
   function addRepo(
@@ -242,6 +283,41 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
       }
       repo.branches.set(branchName, { commitSha: body.sha, treeSha: commit.tree })
       return json({ ref: `refs/heads/${branchName}`, object: { sha: body.sha } })
+    }
+    if (rest === 'commits' && method === 'GET') {
+      const ref = url.searchParams.get('sha') ?? ''
+      const head = repo.branches.get(ref)?.commitSha ?? ref
+      const perPage = Number(url.searchParams.get('per_page') ?? 30)
+      const path = url.searchParams.get('path') ?? ''
+      return json(
+        fileLog(head, path)
+          .slice(0, perPage)
+          .map((sha) => {
+            const c = commitOf(sha)
+            return {
+              sha,
+              commit: {
+                message: c?.message,
+                author: { ...c?.author, date: c?.author.date ?? '2026-10-01T12:00:00Z' },
+              },
+            }
+          }),
+      )
+    }
+    const contents = rest.match(/^contents\/(.+)$/)
+    if (contents) {
+      const path = (contents[1] as string).split('/').map(decodeURIComponent).join('/')
+      const ref = url.searchParams.get('ref') ?? ''
+      const sha = blobAt(commitOf(ref)?.tree, path)
+      const content = sha ? state.blobs.get(sha) : undefined
+      if (!sha || content === undefined) return notFound()
+      return json({
+        type: 'file',
+        path,
+        sha,
+        content: Buffer.from(content).toString('base64'),
+        encoding: 'base64',
+      })
     }
     const checks = rest.match(/^commits\/(\w+)\/(check-runs|status)$/)
     if (checks) {

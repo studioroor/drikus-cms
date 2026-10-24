@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import type { Db } from '../db'
 import { type Draft, drafts, users } from '../db/schema'
+import { gitBlobSha } from '../github/sha'
 import type { LinkedSite, SiteSync } from '../github/sync'
 import { type Collection, type Config, type ConfigIssue, parseConfig } from './config'
 import { checkFields, entryTitle, type FieldIssue } from './fields'
@@ -402,6 +403,96 @@ export class ContentService {
     const path = await this.#resolve(collection, slug)
     this.#deleteDraft(path)
     return { ok: true as const }
+  }
+
+  /** Earlier versions of an entry: the commits that changed its file, newest first. */
+  async revisions(name: string, slug: string) {
+    const collection = await this.collection(name)
+    const path = await this.#resolve(collection, slug)
+    const commits = await this.sync.history(this.site, path)
+    const draft = this.#draft(path)
+    if (!commits.length && !draft) throw new ContentError('not_found', 404)
+    const editor = draft?.updatedBy
+      ? this.db
+          .select({ id: users.id, name: users.name })
+          .from(users)
+          .where(eq(users.id, draft.updatedBy))
+          .get()
+      : undefined
+    return {
+      // The newest commit holds what's live, unless the file was deleted since.
+      live: (await this.files()).has(path),
+      draft: draft
+        ? {
+            action: draft.action,
+            updatedAt: draft.updatedAt.getTime(),
+            updatedBy: editor ?? null,
+          }
+        : null,
+      revisions: commits.map((c) => ({
+        sha: c.sha,
+        message: c.message.split('\n')[0] ?? '',
+        authorName: c.authorName || null,
+        date: Date.parse(c.date) || null,
+      })),
+    }
+  }
+
+  /** The entry's file in one of its revisions, or null if it was deleted there. */
+  async #revisionFile(collection: Collection, slug: string, sha: string) {
+    const path = await this.#resolve(collection, slug)
+    // Only commits from the entry's own history: no peeking at arbitrary refs.
+    const commits = await this.sync.history(this.site, path)
+    if (!commits.some((c) => c.sha === sha)) throw new ContentError('not_found', 404)
+    const content = await this.sync.fileAt(this.site, sha, path)
+    if (!content) return { path, text: null, data: null }
+    const text = content.toString('utf8')
+    try {
+      return { path, text, data: parseDocument(collection.format, text) }
+    } catch (err) {
+      throw new ContentError('invalid_file', 409, [
+        { path, code: 'invalid', message: (err as Error).message },
+      ])
+    }
+  }
+
+  /** The data of one version: a commit SHA, or `draft` for the unpublished changes. */
+  async readRevision(name: string, slug: string, rev: string): Promise<{ data: Data | null }> {
+    const collection = await this.collection(name)
+    if (rev === 'draft') {
+      const draft = this.#draft(await this.#resolve(collection, slug))
+      if (!draft) throw new ContentError('not_found', 404)
+      return { data: draft.action === 'upsert' ? (draft.data ?? {}) : null }
+    }
+    return { data: (await this.#revisionFile(collection, slug, rev)).data }
+  }
+
+  /**
+   * Brings back an earlier version as a draft, byte for byte, so it goes live
+   * with the next publish like any other change.
+   */
+  async restoreRevision(name: string, slug: string, sha: string, userId: string) {
+    const collection = await this.collection(name)
+    const { path, text, data } = await this.#revisionFile(collection, slug, sha)
+    if (text === null || data === null) throw new ContentError('not_found', 404)
+    const publishedSha = (await this.files()).get(path) ?? null
+    if (publishedSha === gitBlobSha(text)) {
+      this.#deleteDraft(path)
+      return { status: 'published' as EntryStatus }
+    }
+    const draft = this.#draft(path)
+    this.#upsertDraft({
+      siteId: this.site.id,
+      path,
+      collection: name,
+      slug,
+      action: 'upsert',
+      data,
+      content: text,
+      baseSha: draft ? draft.baseSha : publishedSha,
+      updatedBy: userId,
+    })
+    return { status: (publishedSha ? 'modified' : 'new') as EntryStatus }
   }
 
   /** All pending changes of the site, newest first. */

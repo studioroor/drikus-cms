@@ -99,6 +99,35 @@ export function resolveConflict(
   )
 }
 
+const revisionsApi = site.collections[':collection'].entries[':slug'].revisions
+const fetchRevisions = (siteId: string, collection: string, slug: string) =>
+  unwrap(revisionsApi.$get({ param: { siteId, collection, slug } }))
+const fetchRevision = (siteId: string, collection: string, slug: string, rev: string) =>
+  unwrap(revisionsApi[':rev'].$get({ param: { siteId, collection, slug, rev } }))
+
+export type RevisionList = Awaited<ReturnType<typeof fetchRevisions>>
+export type Revision = RevisionList['revisions'][number]
+/** A version of an entry: a commit SHA, or "draft" for the unpublished changes. */
+export type VersionId = string
+
+export const revisionsQuery = (siteId: string, collection: string, slug: string) =>
+  queryOptions({
+    queryKey: ['sites', siteId, 'revisions', collection, slug],
+    queryFn: () => fetchRevisions(siteId, collection, slug),
+  })
+
+export const revisionQuery = (siteId: string, collection: string, slug: string, rev: VersionId) =>
+  queryOptions({
+    queryKey: ['sites', siteId, 'revision', collection, slug, rev],
+    queryFn: () => fetchRevision(siteId, collection, slug, rev),
+    // A commit never changes; only the draft does.
+    staleTime: rev === 'draft' ? 0 : Number.POSITIVE_INFINITY,
+  })
+
+export function restoreRevision(siteId: string, collection: string, slug: string, rev: string) {
+  return unwrap(revisionsApi[':rev'].restore.$post({ param: { siteId, collection, slug, rev } }))
+}
+
 export function saveEntry(siteId: string, collection: string, slug: string, data: Data) {
   return unwrap(
     site.collections[':collection'].entries[':slug'].$put({
