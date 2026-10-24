@@ -11,7 +11,7 @@ export function sortOptions(collection: CollectionInfo): { key: string; label: L
   const options: { key: string; label: Label | string }[] = [{ key: 'title', label: 'title' }]
   const top = collection.fields
   const sortField = collection.sortBy ? top.find((f) => f.name === collection.sortBy) : undefined
-  if (collection.sortBy && !isDateField(sortField?.type)) {
+  if (collection.sortBy && collection.sortBy !== 'title' && !isDateField(sortField?.type)) {
     options.push({ key: collection.sortBy, label: sortField?.label ?? collection.sortBy })
   }
   for (const f of top) {

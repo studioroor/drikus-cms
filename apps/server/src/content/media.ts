@@ -4,7 +4,7 @@ import sharp from 'sharp'
 import { type StagedMedia, stagedMedia, users } from '../db/schema'
 import { gitBlobSha } from '../github/sha'
 import type { Config } from './config'
-import { slugify } from './paths'
+import { slugForPath, slugify } from './paths'
 import { ContentError, type ContentService } from './service'
 
 /** Pseudo collection name used for uploads in change lists and publish summaries. */
@@ -298,14 +298,19 @@ export class MediaService {
     return new Set(srcs.filter((s) => known.get(s)))
   }
 
-  /** Text of every published collection file (minus deleted ones) plus every upsert draft. */
+  /**
+   * Text of every published entry file plus every upsert draft. Only entry files count: other
+   * files in a collection folder (co-located images, PDFs) aren't content and needn't be fetched.
+   */
   async #contentTexts(
     drafts: ReturnType<ContentService['drafts']>,
   ): Promise<{ texts: string[]; complete: boolean }> {
     const config = await this.content.config()
     const files = await this.content.files()
     const owned = (path: string) =>
-      config.collections.some((c) => (c.folder ? path.startsWith(`${c.folder}/`) : path === c.file))
+      config.collections.some((c) =>
+        c.folder ? slugForPath(c, path) !== null : path === c.file,
+      )
     const paths = [...files.keys()].filter(owned)
     const texts: string[] = []
     let complete = true

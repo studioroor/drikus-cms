@@ -288,6 +288,10 @@ describe('media usage', () => {
       'src/content/posts/taart.md': '---\ntitle: Taart\n---\n\n![](/uploads/a.webp#right)\n',
       'public/uploads/a.webp': await photo(10, 10),
       'public/uploads/b.webp': await photo(12, 12),
+      // Not entries: a co-located image and files nested deeper or with another extension.
+      'src/content/posts/taart.webp': await photo(8, 8),
+      'src/content/posts/notes.txt': 'see /uploads/b.webp',
+      'src/content/posts/old/taart.md': '![](/uploads/b.webp)',
     })
     const used = async () => {
       const res = await w.editor.get(`${w.base}/media`)

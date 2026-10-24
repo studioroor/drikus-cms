@@ -25,6 +25,11 @@ describe('sortOptions', () => {
     expect(sortOptions(c).map((o) => o.key)).toEqual(['title', 'date'])
   })
 
+  test('does not repeat a sortBy of title', () => {
+    const c = collection('title', [{ name: 'title' }, { name: 'date', type: 'date' }])
+    expect(sortOptions(c).map((o) => o.key)).toEqual(['title', 'date'])
+  })
+
   test('no sortBy leaves just title and dates', () => {
     expect(sortOptions(collection(null, [{ name: 'x' }])).map((o) => o.key)).toEqual(['title'])
   })
