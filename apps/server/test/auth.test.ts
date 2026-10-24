@@ -130,6 +130,23 @@ describe('two-factor auth', () => {
     expect(disable.json.error).toBe('totp_mandatory')
   })
 
+  test('superadmin 2FA is optional when requireAdminTotp is off', async () => {
+    const ctx = setup({ requireAdminTotp: false })
+    await ctx.createUser({ email: 'admin@test.nl', role: 'superadmin' })
+    const c = ctx.client()
+    const login = await c.post('/api/auth/login', { email: 'admin@test.nl', password: PASSWORD })
+    expect(login.json.user.mustEnableTotp).toBe(false)
+    expect((await c.get('/api/admin/users')).status).toBe(200)
+
+    const setupRes = await c.post('/api/auth/totp/setup', { password: PASSWORD })
+    await c.post('/api/auth/totp/enable', { code: totpCode(setupRes.json.secret) })
+    const disable = await c.post('/api/auth/totp/disable', {
+      password: PASSWORD,
+      code: totpCode(setupRes.json.secret, Date.now() + 30_000),
+    })
+    expect(disable.json.user.totpEnabled).toBe(false)
+  })
+
   test('stores TOTP secrets encrypted', async () => {
     const ctx = setup()
     const user = await ctx.createUser({

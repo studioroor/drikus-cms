@@ -15,6 +15,11 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  // Set to "false" to let superadmins use the admin screens without two-step verification.
+  REQUIRE_ADMIN_2FA: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
   // GitHub App (see README). Leave GITHUB_APP_ID unset to run without GitHub.
   GITHUB_APP_ID: z.string().regex(/^\w+$/).optional(),
   // The private key as PEM text, or base64 of it. Takes precedence over the file.

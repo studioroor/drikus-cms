@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { checkTotp } from '../src/auth/totp'
+import { loadEnv } from '../src/config'
 import { SecretBox } from '../src/lib/crypto'
 import { RateLimiter } from '../src/lib/rate-limit'
 import { ADMIN_TOTP_SECRET, totpCode } from './helpers'
@@ -42,5 +43,13 @@ describe('checkTotp', () => {
     ).not.toBeNull()
     expect(checkTotp(ADMIN_TOTP_SECRET, totpCode(ADMIN_TOTP_SECRET, now - 120_000), now)).toBeNull()
     expect(checkTotp(ADMIN_TOTP_SECRET, 'abcdef', now)).toBeNull()
+  })
+})
+
+describe('loadEnv', () => {
+  test('requires admin 2FA unless explicitly disabled', () => {
+    expect(loadEnv({}).REQUIRE_ADMIN_2FA).toBe(true)
+    expect(loadEnv({ REQUIRE_ADMIN_2FA: 'false' }).REQUIRE_ADMIN_2FA).toBe(false)
+    expect(() => loadEnv({ REQUIRE_ADMIN_2FA: 'no' })).toThrow()
   })
 })

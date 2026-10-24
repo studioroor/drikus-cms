@@ -44,7 +44,8 @@ bun run dev          # API on :3000, web on http://localhost:5173 (proxies /api)
 
 On first start with an empty database, the server prints a one-time **setup link** to create the
 first superadmin. You can also use the CLI: `bun run cli create-admin you@example.com "Your Name"`.
-Superadmins have to enable two-step verification (TOTP) before they can use the admin screens.
+Superadmins have to enable two-step verification (TOTP) before they can use the admin screens,
+unless `REQUIRE_ADMIN_2FA=false` is set.
 
 ```sh
 bun test             # API tests (in-memory SQLite)
@@ -70,6 +71,7 @@ The image is published to `ghcr.io/studioroor/drikus-cms` by CI on every push to
 | `PORT`                        | `3000`                       |                                                                    |
 | `TRUST_PROXY`                 | `false`                      | Set `true` behind a reverse proxy so rate limiting sees client IPs |
 | `SECRET_KEY`                  | generated                    | Optional base64 32-byte key instead of `secret.key`                |
+| `REQUIRE_ADMIN_2FA`           | `true`                       | Set `false` to make two-step verification optional for superadmins |
 | `GITHUB_APP_ID`               | unset                        | Enables the GitHub integration                                     |
 | `GITHUB_APP_PRIVATE_KEY_FILE` | `$DATA_DIR/github-app.pem`   | Private key of the GitHub App                                      |
 | `GITHUB_APP_PRIVATE_KEY`      | unset                        | Alternative: the key as PEM text or base64 (e.g. for Fly secrets)  |
