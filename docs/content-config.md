@@ -93,6 +93,27 @@ image), list the hints as `imageStyles` and editors can pick one per image:
 
 What a hint does is up to your site; the CMS only writes it into the path.
 
+### Lists and blocks in the editor
+
+How a `list` or `blocks` field looks to editors depends on what it holds:
+- **Lists of groups and `blocks`** open as an index on the left and a detail pane on the right.
+  Editors pick an item to edit it, and can add, reorder and delete items from the index. Rows show
+  the first text value as the title, and a thumbnail from the item's first `image` field (at the top
+  level, or one level into an `object`). Lists inside an item drill down the same way.
+- **Short lists stay inline**: up to 3 items whose fields are all short (text, number, date,
+  select and the like) are edited right in the form. This is decided once, when the form opens, so
+  a list doesn't jump layout while someone types.
+- **Image lists** (`type: list` with `field: { type: image }`) become a photo grid. Editors add
+  several photos at once, from the library (multi-select) or by dropping multiple files, and can
+  reorder or remove them. `maxItems` is respected; extra files are dropped.
+- The selected item is kept in the page URL (`?item=`), so a reload or a shared link returns to the
+  same item.
+
+### Sorting and paging
+
+The index of a folder collection can be sorted by title, by its `sortBy` field, or by any `date`
+or `datetime` field. It shows 25 entries per page.
+
 ## Images and files
 
 Editors upload images and files from any `image` or `file` field (click or drag and drop), from
