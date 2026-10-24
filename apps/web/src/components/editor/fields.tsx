@@ -5,8 +5,9 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/field'
 import { cn } from '@/lib/cn'
-import { type Data, entriesQuery, type FieldDef, previewUrl, useLabel } from '@/lib/content'
+import { type Data, entriesQuery, type FieldDef, useLabel } from '@/lib/content'
 import { useEditor } from './context'
+import { MediaField } from './media'
 
 // Tiptap is large: load it only when a rich text field is on screen.
 const RichTextEditor = lazy(() =>
@@ -125,9 +126,8 @@ export function FieldInput({
   path: string
   onChange: (value: unknown) => void
 }) {
-  const { t } = useTranslation()
   const label = useLabel()
-  const { readOnly, siteUrl } = useEditor()
+  const { readOnly, siteId } = useEditor()
   const text = asString(value)
   const setText = (v: string) => onChange(v === '' && !field.required ? undefined : v)
 
@@ -169,7 +169,7 @@ export function FieldInput({
             value={text}
             onChange={setText}
             readOnly={readOnly}
-            siteUrl={siteUrl}
+            siteId={siteId}
             imageStyles={(field.imageStyles ?? []).map((s) =>
               typeof s === 'string'
                 ? { value: s, label: s }
@@ -260,28 +260,17 @@ export function FieldInput({
     case 'reference':
       return <ReferenceInput id={id} field={field} value={value} onChange={onChange} />
     case 'image':
-    case 'file': {
-      const preview = field.type === 'image' ? previewUrl(text, siteUrl) : null
+    case 'file':
       return (
-        <div className="space-y-2">
-          <Input
-            id={id}
-            value={text}
-            placeholder="/uploads/…"
-            disabled={readOnly}
-            onChange={(e) => setText(e.target.value)}
-          />
-          <p className="text-sm text-stone-500">{t('editor.imageHint')}</p>
-          {preview && (
-            <img
-              src={preview}
-              alt=""
-              className="max-h-40 rounded-lg border border-stone-200 object-contain"
-            />
-          )}
-        </div>
+        <MediaField
+          id={id}
+          siteId={siteId}
+          kind={field.type}
+          value={text}
+          readOnly={readOnly}
+          onChange={setText}
+        />
       )
-    }
     case 'object':
       return (
         <Group>

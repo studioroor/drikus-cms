@@ -9,12 +9,14 @@ export function Dialog({
   title,
   children,
   footer,
+  size = 'md',
 }: {
   open: boolean
   onClose: () => void
   title: ReactNode
   children: ReactNode
   footer?: ReactNode
+  size?: 'md' | 'lg'
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const { t } = useTranslation()
@@ -33,7 +35,7 @@ export function Dialog({
       ref={ref}
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose()}
-      className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-2xl bg-white p-0 shadow-xl"
+      className={`m-auto w-[calc(100%-2rem)] rounded-2xl bg-white p-0 shadow-xl ${size === 'lg' ? 'max-w-3xl' : 'max-w-lg'}`}
     >
       {open && (
         <div>

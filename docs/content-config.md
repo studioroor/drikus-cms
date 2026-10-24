@@ -51,31 +51,32 @@ Frontmatter keys that aren't in `fields` (for example Astro's `layout`) are kept
 
 Every field has `name` (required), and optionally `label`, `hint`, `required` and `default`.
 
-| `type`             | Stores                                                                   | Options                                                         |
-| ------------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| `string` (default) | text                                                                     | `maxLength`                                                     |
-| `text`             | multi-line text                                                          | `maxLength`                                                     |
-| `richtext`         | Markdown, edited visually (bold, headings, lists, links, quotes, images) | `imageStyles`, see below                                        |
-| `markdown`         | Markdown in a plain text box (use for MDX)                               |                                                                 |
-| `number`           | number                                                                   | `min`, `max`, `step`                                            |
-| `boolean`          | `true`/`false`                                                           |                                                                 |
-| `date`             | `YYYY-MM-DD`                                                             |                                                                 |
-| `datetime`         | `YYYY-MM-DDTHH:mm`                                                       |                                                                 |
-| `select`           | one value, or a list with `multiple: true`                               | `options: [a, b]` or `[{ label, value }]`                       |
-| `reference`        | the slug of an entry in another folder collection                        | `collection`, `multiple`                                        |
-| `image`, `file`    | a path such as `/uploads/photo.jpg` (uploading arrives in a later phase) |                                                                 |
-| `url`              | a link                                                                   |                                                                 |
-| `color`            | `#rrggbb`                                                                |                                                                 |
-| `object`           | a group of fields                                                        | `fields`                                                        |
-| `list`             | a list of groups (`fields`) or of single values (`field`)                | `minItems`, `maxItems`                                          |
-| `blocks`           | a list of typed sections, each `{ type: <block name>, …fields }`         | `blocks: [{ name, label, fields }]`, `typeKey` (default `type`) |
-| `hidden`           | kept as is, not shown                                                    |                                                                 |
+| `type`             | Stores                                                                    | Options                                                         |
+| ------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `string` (default) | text                                                                      | `maxLength`                                                     |
+| `text`             | multi-line text                                                           | `maxLength`                                                     |
+| `richtext`         | Markdown, edited visually (bold, headings, lists, links, quotes, images)  | `imageStyles`, see below                                        |
+| `markdown`         | Markdown in a plain text box (use for MDX)                                |                                                                 |
+| `number`           | number                                                                    | `min`, `max`, `step`                                            |
+| `boolean`          | `true`/`false`                                                            |                                                                 |
+| `date`             | `YYYY-MM-DD`                                                              |                                                                 |
+| `datetime`         | `YYYY-MM-DDTHH:mm`                                                        |                                                                 |
+| `select`           | one value, or a list with `multiple: true`                                | `options: [a, b]` or `[{ label, value }]`                       |
+| `reference`        | the slug of an entry in another folder collection                         | `collection`, `multiple`                                        |
+| `image`, `file`    | a path such as `/uploads/photo.webp`, uploaded or picked from the library |                                                                 |
+| `url`              | a link                                                                    |                                                                 |
+| `color`            | `#rrggbb`                                                                 |                                                                 |
+| `object`           | a group of fields                                                         | `fields`                                                        |
+| `list`             | a list of groups (`fields`) or of single values (`field`)                 | `minItems`, `maxItems`                                          |
+| `blocks`           | a list of typed sections, each `{ type: <block name>, …fields }`          | `blocks: [{ name, label, fields }]`, `typeKey` (default `type`) |
+| `hidden`           | kept as is, not shown                                                     |                                                                 |
 
 ### Images in rich text
 
 Images in a `richtext` field are stored as Markdown: `![alt text](/uploads/photo.jpg "Caption")`.
-They can stand on their own line or sit inside a paragraph, so text flows around them. The
-editor previews paths starting with `/` from the site's URL.
+They can stand on their own line or sit inside a paragraph, so text flows around them. Editors
+insert them from the media library (uploading right there if needed) and fill in the description
+for screen readers in the image's settings.
 
 If your site reads a hint after `#` in the image path (for example `photo.jpg#right` to float an
 image), list the hints as `imageStyles` and editors can pick one per image:
@@ -91,6 +92,36 @@ image), list the hints as `imageStyles` and editors can pick one per image:
 ```
 
 What a hint does is up to your site; the CMS only writes it into the path.
+
+## Images and files
+
+Editors upload images and files from any `image` or `file` field (click or drag and drop), from
+the image button in rich text, or pick earlier uploads from the **media library**.
+
+```yaml
+media:
+  folder: public/uploads # where uploads are committed (default)
+  publicPath: /uploads # the URL the site serves that folder at (derived from folder)
+  maxWidth: 2000 # wider images are scaled down (default 2000)
+  format: webp # webp (default) or original (keep JPEG/PNG/GIF)
+  quality: 82 # image quality, 40–100
+  maxSizeMb: 15 # largest upload accepted
+```
+
+- Uploads are checked by their content, not their name. Accepted images: JPEG, PNG, WebP, GIF,
+  AVIF (and HEIC when the server can decode it). Accepted files: PDF, Word/Excel/PowerPoint
+  (`.docx`, `.xlsx`, `.pptx`), ZIP, TXT, CSV, MP3 and MP4. **SVG is refused**, because it can
+  contain scripts.
+- Images are rotated upright, scaled down to `maxWidth`, **stripped of metadata** (camera
+  details, GPS location) and converted to WebP unless `format: original`.
+- File names are made from the original name plus a short content hash
+  (`taart-3fa9c1d2.webp`), so different files never collide and uploading the same file twice
+  stores it once.
+- Uploads wait in the CMS until the next **publish**, and are committed in the same commit as the
+  content that uses them. Until then they are marked _new_ in the library and can still be
+  deleted; published files stay (pages may use them).
+- Previews in the editor come from the CMS itself, so new uploads show before they're published.
+  Paths that aren't in the repository are previewed from the live site.
 
 ## Drafts and publishing
 

@@ -5,6 +5,7 @@ import { bodyLimit } from 'hono/body-limit'
 import { createMiddleware } from 'hono/factory'
 import { z } from 'zod'
 import type { Collection } from '../content/config'
+import { MEDIA_COLLECTION, MediaService } from '../content/media'
 import { PublishService } from '../content/publish'
 import { ContentError, ContentService } from '../content/service'
 import { sites, users } from '../db/schema'
@@ -25,6 +26,10 @@ const Data = z.object({ data: z.record(z.string(), z.unknown()) })
 const CollectionParam = z.object({ collection: z.string().max(64) })
 const EntryParam = z.object({ collection: z.string().max(64), slug: z.string().max(130) })
 const limit = bodyLimit({ maxSize: 2 * 1024 * 1024 })
+// Uploads are checked against the site's own limit after parsing; this caps the request.
+const mediaLimit = bodyLimit({ maxSize: 51 * 1024 * 1024 })
+const SrcQuery = z.object({ src: z.string().min(1).max(500) })
+const MediaFileQuery = SrcQuery.extend({ w: z.coerce.number().int().optional() })
 const PublishBody = z.object({ message: z.string().trim().max(500).optional() })
 const CommitSha = z.string().regex(/^[0-9a-f]{40}$/)
 const RevisionParam = EntryParam.extend({ rev: z.union([z.literal('draft'), CommitSha]) })
@@ -113,7 +118,7 @@ export const contentRoutes = new Hono<ContentEnv>()
         status: 'ok' as const,
         collections: state.config.collections.map(clientCollection),
         issues: null,
-        changes: content.drafts().length,
+        changes: content.drafts().length + new MediaService(content).staged().length,
       }
     }),
   )
@@ -139,7 +144,88 @@ export const contentRoutes = new Hono<ContentEnv>()
       throw err
     }
   })
-  .get('/changes', (c) => handle(c, async () => ({ changes: requireContent(c).changes() })))
+  .get('/changes', (c) =>
+    handle(c, async () => {
+      const content = requireContent(c)
+      const names = new Map(
+        c.var.deps.db
+          .select({ id: users.id, name: users.name })
+          .from(users)
+          .all()
+          .map((u) => [u.id, u.name]),
+      )
+      const uploads = new MediaService(content).staged().map((m) => {
+        const name = m.path.split('/').pop() as string
+        return {
+          collection: MEDIA_COLLECTION,
+          slug: name,
+          action: 'upsert' as const,
+          status: 'new' as const,
+          title: name,
+          updatedAt: m.createdAt.getTime(),
+          updatedBy: m.uploadedBy
+            ? { id: m.uploadedBy, name: names.get(m.uploadedBy) ?? '' }
+            : null,
+        }
+      })
+      return {
+        changes: [...content.changes(), ...uploads].sort((a, b) => b.updatedAt - a.updatedAt),
+      }
+    }),
+  )
+  // --- Media -----------------------------------------------------------------
+  .get('/media', (c) => handle(c, () => new MediaService(requireContent(c)).list()))
+  .post('/media', mediaLimit, (c) =>
+    handle(c, async () => {
+      const body = await c.req.parseBody()
+      const file = body.file
+      if (!(file instanceof File)) throw new ContentError('invalid_input', 400)
+      const item = await new MediaService(requireContent(c)).upload(file, c.var.user.id)
+      audit(c.var.deps.db, {
+        actorId: c.var.user.id,
+        action: 'media.uploaded',
+        targetType: 'site',
+        targetId: c.req.param('siteId'),
+        ip: c.var.ip,
+        details: { path: item.path, size: item.size },
+      })
+      return { item }
+    }),
+  )
+  .delete('/media', validate('query', SrcQuery), (c) =>
+    handle(c, () => new MediaService(requireContent(c)).remove(c.req.valid('query').src)),
+  )
+  .get('/media/file', validate('query', MediaFileQuery), async (c) => {
+    const content = c.var.content
+    if (!content) return c.json({ error: 'not_found' as const }, 404)
+    const { src, w } = c.req.valid('query')
+    const media = new MediaService(content)
+    try {
+      const width = w && media.isThumbWidth(w) ? w : undefined
+      const file = await media.read(src, width)
+      if (!file) {
+        // Not a repo file (e.g. an image hosted elsewhere): let the live site serve it.
+        if (content.site.siteUrl && src.startsWith('/') && !src.startsWith('//')) {
+          return c.redirect(`${content.site.siteUrl.replace(/\/$/, '')}${src}`, 302)
+        }
+        return c.json({ error: 'not_found' as const }, 404)
+      }
+      const etag = `"${file.etag}"`
+      c.header('cache-control', 'private, max-age=300')
+      c.header('etag', etag)
+      if (c.req.header('if-none-match') === etag) return c.body(null, 304)
+      c.header('content-type', file.type.mime)
+      // Repo files are untrusted: lock the response down so nothing in it can run here.
+      c.set('csp', "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox")
+      if (file.type.ext === 'svg' || file.type.kind === 'file')
+        c.header('content-disposition', 'attachment')
+      return c.body(new Uint8Array(file.bytes))
+    } catch (err) {
+      if (err instanceof ContentError) return c.json({ error: err.code }, err.status)
+      if (err instanceof GitHubError) return c.json({ error: githubFailure(err).error }, 502)
+      throw err
+    }
+  })
   .get('/collections/:collection/entries', validate('param', CollectionParam), (c) =>
     handle(c, async () => ({
       entries: await requireContent(c).listEntries(c.req.valid('param').collection),

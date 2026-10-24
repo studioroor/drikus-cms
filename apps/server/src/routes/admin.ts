@@ -11,6 +11,7 @@ import {
   type Site,
   siteMembers,
   sites,
+  stagedMedia,
   users,
 } from '../db/schema'
 import type { AuthedEnv } from '../env'
@@ -356,6 +357,7 @@ export const adminRoutes = new Hono<AuthedEnv>()
         // Drafts belong to the old repository's files; they can't be published elsewhere.
         if ('repoId' in link && link.repoId !== site.repoId) {
           tx.delete(drafts).where(eq(drafts.siteId, id)).run()
+          tx.delete(stagedMedia).where(eq(stagedMedia.siteId, id)).run()
         }
       })
       audit(db, {
