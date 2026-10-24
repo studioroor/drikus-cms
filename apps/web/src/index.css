@@ -18,6 +18,11 @@
   body {
     @apply bg-stone-50 text-stone-900 antialiased;
   }
+  /* Tailwind v4 resets buttons to the default cursor. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-brand-600;
   }
