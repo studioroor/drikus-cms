@@ -1,5 +1,6 @@
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { ArrowUpDown, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -7,21 +8,46 @@ import { Input } from '@/components/ui/field'
 import { Toast } from '@/components/ui/toast'
 import { cn } from '@/lib/cn'
 import { type Data, type FieldDef, useLabel } from '@/lib/content'
-import { asObject, move, moveIds, resolveChain, setIn } from '@/lib/list'
+import { asObject, type ChainLevel, move, movedIndex, resolveChain, setIn } from '@/lib/list'
 import { useContainerWidth } from '@/lib/use-container-width'
 import { useEditor } from './context'
 import { BlockPicker, FieldList } from './fields'
-import { ItemIndex, useItemLabel } from './item-index'
-import { useListIds } from './list-ids'
+import { ItemIndex, useItemLabeler } from './item-index'
+import { useListIds, useListIdsFor } from './list-ids'
+import { ListNavContext } from './list-nav'
 
 type Block = NonNullable<FieldDef['blocks']>[number]
+type Mode = 'push' | 'replace'
 
 /** Below this container width the index and the item take turns instead of sitting side by side. */
 const WIDE = 640
 
 const FIRST_INPUT = 'input:not([type="hidden"]):not([type="file"]), textarea'
 
-/** A list of objects or blocks: an index of compact rows next to the selected item's form. */
+const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
+
+/** The segments of `p` below `base`, list indexes as numbers, for `setIn`. */
+const segmentsOf = (base: string, p: string): (string | number)[] =>
+  p === base
+    ? []
+    : p
+        .slice(base.length + 1)
+        .split('.')
+        .map((s) => (/^\d+$/.test(s) ? Number(s) : s))
+
+const getAt = (value: unknown, segments: (string | number)[]): unknown =>
+  segments.reduce<unknown>(
+    (v, s) => (typeof s === 'number' ? asArray(v)[s] : asObject(v)[s]),
+    value,
+  )
+
+const itemPathOf = (l: ChainLevel) => `${l.listPath}.${l.index}`
+
+/**
+ * A list of objects or blocks: an index of compact rows next to the selected item's form.
+ * Lists inside the selected item drill down in the same pane; the selected path is kept in
+ * the `item` search param.
+ */
 export function ListEditor({
   field,
   value,
@@ -37,15 +63,18 @@ export function ListEditor({
   const label = useLabel()
   const { readOnly } = useEditor()
   const ids = useListIds(path, value.length)
-  const itemLabel = useItemLabel(field)
+  const idsFor = useListIdsFor()
+  const labeler = useItemLabeler()
+  const navigate = useNavigate()
+  const { item: urlItem } = useSearch({ strict: false })
   const root = useRef<HTMLDivElement>(null)
   const pane = useRef<HTMLDivElement>(null)
   const wide = useContainerWidth(root) >= WIDE
   const [search, setSearch] = useState('')
   const [picking, setPicking] = useState(false)
-  const [selected, setSelected] = useState<string | null>(null)
   const [removed, setRemoved] = useState<{
     item: unknown
+    listPath: string
     index: number
     title: string
     seq: number
@@ -53,14 +82,48 @@ export function ListEditor({
   const removals = useRef(0)
   const focusNew = useRef(false)
 
-  // Every selection change goes through here, so it can move into the URL later.
-  const select = (next: string | null, _mode: 'push' | 'replace') => setSelected(next)
-  const selectAt = (i: number | null) => select(i === null ? null : `${path}.${i}`, 'replace')
+  // The URL holds one selection for the whole form. While it points into this list it wins;
+  // while it points into another list, this one keeps what was last selected here.
+  const ours = typeof urlItem === 'string' && urlItem.startsWith(`${path}.`) ? urlItem : null
+  const [local, setLocal] = useState<string | null>(ours)
+  if (ours !== null && ours !== local) setLocal(ours)
+  const selected = ours ?? (typeof urlItem === 'string' ? local : null)
 
-  const chosen = resolveChain(field, path, value, selected)[0]?.index
-  const index = chosen ?? (wide && value.length ? 0 : null)
+  // Replace for selecting, previous/next, reorder and delete; push for drilling and crumbs,
+  // so Back steps out one level instead of through every click.
+  const select = (next: string | null, mode: Mode) => {
+    setLocal(next)
+    if (next === null && ours === null) return
+    void navigate({
+      to: '.',
+      search: (s) => ({ ...s, item: next ?? undefined }),
+      replace: mode === 'replace',
+      // Stay where the editor is on the page; the router scrolls to the top by default.
+      resetScroll: false,
+    })
+  }
+  const nav = { select }
+
+  // A stale or invalid path shows its deepest valid level; wide screens default to the first.
+  const explicit = resolveChain(field, path, value, selected)
+  const chain =
+    explicit.length || !wide || !value.length
+      ? explicit
+      : resolveChain(field, path, value, `${path}.0`)
+  const level = chain.at(-1) ?? null
+  const top = chain[0]?.index ?? null
   const listLabel = label(field.label, field.name)
   const full = field.maxItems !== undefined && value.length >= field.maxItems
+
+  /** The items of the list a chain level sits in. */
+  const siblingsOf = (n: number): unknown[] =>
+    asArray(getAt(value, segmentsOf(path, (chain[n] as ChainLevel).listPath)))
+  const setList = (listPath: string, next: unknown[]) =>
+    onChange(setIn(value, segmentsOf(path, listPath), next))
+  /** A pending Undo for a list inside the item that changes position would land elsewhere. */
+  const dropUndoUnder = (listPath: string) => {
+    if (removed?.listPath.startsWith(`${listPath}.`)) setRemoved(null)
+  }
 
   useEffect(() => {
     if (!focusNew.current) return
@@ -71,7 +134,7 @@ export function ListEditor({
   const append = (item: unknown) => {
     ids.insert(value.length)
     onChange([...value, item])
-    selectAt(value.length)
+    select(`${path}.${value.length}`, 'replace')
     focusNew.current = true
   }
   const add = () => (field.type === 'blocks' ? setPicking(true) : append({}))
@@ -82,31 +145,45 @@ export function ListEditor({
     append(initial)
   }
 
-  const moveItem = (from: number, to: number) => {
-    if (from === to || to < 0 || to >= value.length) return
-    const selectedId = index === null ? undefined : ids.ids[index]
-    const nextIds = moveIds(ids.ids, from, to)
-    ids.move(from, to)
-    onChange(move(value, from, to))
-    if (selectedId === undefined || index === null) return
-    // Follow the selected item, keeping anything selected inside it.
-    const rest = selected && chosen !== undefined ? selected.slice(`${path}.${chosen}`.length) : ''
-    select(`${path}.${nextIds.indexOf(selectedId)}${rest}`, 'replace')
+  const moveIn = (listPath: string, items: unknown[], from: number, to: number) => {
+    if (from === to || to < 0 || to >= items.length) return
+    idsFor(listPath, items.length).move(from, to)
+    setList(listPath, move(items, from, to))
+    dropUndoUnder(listPath)
+    // Follow the shown item if it is (or sits inside) one of the list's items.
+    const current = level ? itemPathOf(level) : null
+    if (!current?.startsWith(`${listPath}.`)) return
+    const [k, ...rest] = current.slice(listPath.length + 1).split('.')
+    select([`${listPath}.${movedIndex(from, to)(Number(k))}`, ...rest].join('.'), 'replace')
   }
 
-  const removeAt = (i: number) => {
-    setRemoved({ item: value[i], index: i, title: itemLabel(value[i], i), seq: ++removals.current })
-    ids.remove(i)
-    onChange(value.filter((_, j) => j !== i))
-    const left = value.length - 1
-    selectAt(left === 0 ? null : Math.min(i, left - 1))
+  const removeAt = (n: number) => {
+    const l = chain[n] as ChainLevel
+    const items = siblingsOf(n)
+    const i = l.index
+    setRemoved({
+      item: items[i],
+      listPath: l.listPath,
+      index: i,
+      title: labeler(l.field, items[i], i),
+      seq: ++removals.current,
+    })
+    idsFor(l.listPath, items.length).remove(i)
+    setList(
+      l.listPath,
+      items.filter((_, j) => j !== i),
+    )
+    const left = items.length - 1
+    const parent = n > 0 ? itemPathOf(chain[n - 1] as ChainLevel) : null
+    select(left > 0 ? `${l.listPath}.${Math.min(i, left - 1)}` : parent, 'replace')
   }
   const undo = () => {
     if (!removed) return
-    const at = Math.min(removed.index, value.length)
-    ids.insert(at)
-    onChange([...value.slice(0, at), removed.item, ...value.slice(at)])
-    selectAt(at)
+    const items = asArray(getAt(value, segmentsOf(path, removed.listPath)))
+    const at = Math.min(removed.index, items.length)
+    idsFor(removed.listPath, items.length).insert(at)
+    setList(removed.listPath, [...items.slice(0, at), removed.item, ...items.slice(at)])
+    select(`${removed.listPath}.${at}`, 'replace')
   }
 
   const addButton = !readOnly && !full && (
@@ -121,13 +198,15 @@ export function ListEditor({
       value={value}
       listPath={path}
       ids={ids.ids}
-      selectedIndex={index}
-      onSelect={selectAt}
-      onMove={moveItem}
+      selectedIndex={top}
+      onSelect={(i) => select(`${path}.${i}`, 'replace')}
+      onMove={(from, to) => moveIn(path, value, from, to)}
       search={search}
       size="md"
     />
   )
+
+  const up = chain.length > 1 ? (chain[chain.length - 2] as ChainLevel) : null
 
   return (
     <div ref={root} className="rounded-xl border border-stone-200 bg-white">
@@ -161,20 +240,24 @@ export function ListEditor({
           <div className="max-h-[75vh] w-2/5 shrink-0 overflow-y-auto border-r border-stone-200 p-2">
             {indexPane}
           </div>
-          <div className="min-w-0 flex-1">{index !== null && renderPane(index)}</div>
+          <div className="min-w-0 flex-1">{renderPane()}</div>
         </div>
-      ) : index === null ? (
+      ) : level === null ? (
         <div className="p-2">{indexPane}</div>
       ) : (
         <div>
+          {/* Up one level: to the item this list sits in, or to the index. */}
           <button
             type="button"
-            onClick={() => select(null, 'replace')}
+            onClick={() => (up ? select(itemPathOf(up), 'push') : select(null, 'replace'))}
             className="flex items-center gap-1 px-3 pt-3 text-sm font-medium text-brand-700 hover:underline"
           >
-            <ChevronLeft className="size-4" /> {t('editor.backToList', { label: listLabel })}
+            <ChevronLeft className="size-4" />{' '}
+            {t('editor.backToList', {
+              label: up ? labeler(up.field, up.item, up.index) : listLabel,
+            })}
           </button>
-          {renderPane(index)}
+          {renderPane()}
         </div>
       )}
 
@@ -199,27 +282,71 @@ export function ListEditor({
     </div>
   )
 
-  function renderPane(i: number) {
-    const item = asObject(value[i])
+  /** The form of the deepest selected item; only one level of forms is ever visible. */
+  function renderPane() {
+    if (!level) return null
+    const n = chain.length - 1
+    const items = siblingsOf(n)
+    const i = level.index
+    const levelIds = idsFor(level.listPath, items.length)
+    const itemPath = itemPathOf(level)
     const block =
-      field.type === 'blocks' ? field.blocks?.find((b) => b.name === item[field.typeKey]) : null
-    const fields = field.type === 'blocks' ? block?.fields : (field.fields ?? [])
-    const nav =
+      level.field.type === 'blocks'
+        ? level.field.blocks?.find((b) => b.name === level.item[level.field.typeKey])
+        : null
+    const navButton =
       'rounded-md p-1.5 text-stone-500 hover:bg-stone-100 hover:text-stone-900 disabled:opacity-30'
+    const crumb = 'min-w-0 truncate hover:text-stone-900 hover:underline'
     return (
-      <div ref={pane} key={ids.ids[i]}>
+      <div ref={pane} key={levelIds.ids[i]}>
+        {chain.length > 1 && (
+          <nav
+            aria-label={t('editor.breadcrumb')}
+            className="flex flex-wrap items-center gap-1 px-4 pt-3 text-xs text-stone-500"
+          >
+            {wide ? (
+              <span>{listLabel}</span>
+            ) : (
+              <button type="button" className={crumb} onClick={() => select(null, 'push')}>
+                {listLabel}
+              </button>
+            )}
+            {chain.map((c, k) => (
+              <Fragment key={c.listPath}>
+                <ChevronRight className="size-3 shrink-0" aria-hidden />
+                {k === n ? (
+                  <span aria-current="page" className="min-w-0 truncate text-stone-700">
+                    {labeler(c.field, c.item, c.index)}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className={crumb}
+                    onClick={() => select(itemPathOf(c), 'push')}
+                  >
+                    {labeler(c.field, c.item, c.index)}
+                  </button>
+                )}
+              </Fragment>
+            ))}
+          </nav>
+        )}
         <div className="flex items-center gap-1 border-b border-stone-100 py-2 pr-2 pl-4">
           <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-stone-800">
-            {itemLabel(value[i], i)}
+            {labeler(level.field, items[i], i)}
           </h3>
-          {!readOnly && value.length > 1 && (
-            <MoveMenu index={i} count={value.length} onMove={(to) => moveItem(i, to)} />
+          {!readOnly && items.length > 1 && (
+            <MoveMenu
+              index={i}
+              count={items.length}
+              onMove={(to) => moveIn(level.listPath, items, i, to)}
+            />
           )}
           {!readOnly && (
             <button
               type="button"
-              className={cn(nav, 'hover:text-red-700')}
-              onClick={() => removeAt(i)}
+              className={cn(navButton, 'hover:text-red-700')}
+              onClick={() => removeAt(n)}
               title={t('editor.remove')}
               aria-label={t('editor.remove')}
             >
@@ -228,9 +355,9 @@ export function ListEditor({
           )}
           <button
             type="button"
-            className={nav}
+            className={navButton}
             disabled={i === 0}
-            onClick={() => selectAt(i - 1)}
+            onClick={() => select(`${level.listPath}.${i - 1}`, 'replace')}
             title={t('editor.previous')}
             aria-label={t('editor.previous')}
           >
@@ -238,9 +365,9 @@ export function ListEditor({
           </button>
           <button
             type="button"
-            className={nav}
-            disabled={i === value.length - 1}
-            onClick={() => selectAt(i + 1)}
+            className={navButton}
+            disabled={i === items.length - 1}
+            onClick={() => select(`${level.listPath}.${i + 1}`, 'replace')}
             title={t('editor.next')}
             aria-label={t('editor.next')}
           >
@@ -248,16 +375,16 @@ export function ListEditor({
           </button>
         </div>
         <div className="p-4">
-          {fields ? (
-            <>
+          {level.fields ? (
+            <ListNavContext.Provider value={nav}>
               {block?.hint && <p className="mb-4 text-sm text-stone-500">{label(block.hint)}</p>}
               <FieldList
-                fields={fields}
-                value={item}
-                path={`${path}.${i}`}
-                onChange={(v) => onChange(setIn(value, [i], v))}
+                fields={level.fields}
+                value={level.item}
+                path={itemPath}
+                onChange={(v) => onChange(setIn(value, segmentsOf(path, itemPath), v))}
               />
-            </>
+            </ListNavContext.Provider>
           ) : (
             <p className="text-sm text-stone-500">{t('errors.invalid_input')}</p>
           )}

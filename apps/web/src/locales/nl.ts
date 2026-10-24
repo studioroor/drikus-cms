@@ -124,6 +124,7 @@ export const nl = {
     previous: 'Vorige',
     next: 'Volgende',
     backToList: 'Terug naar {{label}}',
+    breadcrumb: 'Kruimelpad',
     noItems: 'Nog niets toegevoegd',
     remove: 'Verwijderen',
     item: 'Item {{n}}',

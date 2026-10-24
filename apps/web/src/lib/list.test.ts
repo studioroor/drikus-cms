@@ -2,12 +2,16 @@ import { describe, expect, test } from 'bun:test'
 import type { Data, FieldDef } from './content'
 import {
   hasImageField,
+  insertedIndex,
   isInlineList,
   itemFields,
   itemSnippet,
   matchesSearch,
+  movedIndex,
   moveIds,
   reconcileIds,
+  rekeyPaths,
+  removedIndex,
   resolveChain,
   setIn,
   thumbnailOf,
@@ -58,6 +62,26 @@ describe('resolveChain', () => {
     expect(resolveChain(services, 'services', data, 'services.1.packages.7')).toHaveLength(1)
     expect(resolveChain(services, 'services', data, 'reviews.0')).toEqual([])
     expect(resolveChain(services, 'services', data, null)).toEqual([])
+  })
+
+  test('walks through object fields to a nested list', () => {
+    const team = f({
+      name: 'team',
+      type: 'list',
+      fields: [
+        {
+          name: 'meta',
+          type: 'object',
+          fields: [{ name: 'links', type: 'list', fields: [{ name: 'label', type: 'string' }] }],
+        },
+      ],
+    })
+    const value = [{ meta: { links: [{ label: 'a' }, { label: 'b' }] } }]
+    const chain = resolveChain(team, 'team', value, 'team.0.meta.links.1')
+    expect(chain).toHaveLength(2)
+    expect(chain[1]?.listPath).toBe('team.0.meta.links')
+    expect(chain[1]?.item.label).toBe('b')
+    expect(resolveChain(team, 'team', value, 'team.0.meta.nope.0')).toHaveLength(1)
   })
 })
 
@@ -147,5 +171,60 @@ describe('itemFields', () => {
     expect(itemFields(blocks, { type: 'hero' })?.[0]?.name).toBe('title')
     expect(itemFields(blocks, { type: 'nope' })).toBeNull()
     expect(itemFields(services, {})).toBe(serviceFields)
+  })
+})
+
+describe('rekeyPaths', () => {
+  const map = () =>
+    new Map([
+      ['services', 'list'],
+      ['services.0.packages', 'a'],
+      ['services.1.packages', 'b'],
+      ['services.1.packages.0.extras', 'b0'],
+      ['services.2.packages', 'c'],
+      ['services.10.packages', 'k'],
+      ['other.1.packages', 'x'],
+    ])
+  const keys = (m: Map<string, string>) => Object.fromEntries(m)
+
+  test('index remaps', () => {
+    expect([0, 1, 2, 3].map(movedIndex(0, 2))).toEqual([2, 0, 1, 3])
+    expect([0, 1, 2, 3].map(movedIndex(2, 0))).toEqual([1, 2, 0, 3])
+    expect([0, 1, 2].map(removedIndex(1))).toEqual([0, null, 1])
+    expect([0, 1, 2].map(insertedIndex(1))).toEqual([0, 2, 3])
+  })
+
+  test('moves entries under an item along with it', () => {
+    expect(keys(rekeyPaths(map(), 'services', movedIndex(1, 0)))).toEqual({
+      services: 'list',
+      'services.1.packages': 'a',
+      'services.0.packages': 'b',
+      'services.0.packages.0.extras': 'b0',
+      'services.2.packages': 'c',
+      'services.10.packages': 'k',
+      'other.1.packages': 'x',
+    })
+  })
+
+  test('drops entries of a removed item and shifts the rest', () => {
+    expect(keys(rekeyPaths(map(), 'services', removedIndex(1)))).toEqual({
+      services: 'list',
+      'services.0.packages': 'a',
+      'services.1.packages': 'c',
+      'services.9.packages': 'k',
+      'other.1.packages': 'x',
+    })
+  })
+
+  test('makes room for an inserted item', () => {
+    expect(keys(rekeyPaths(map(), 'services', insertedIndex(0)))).toEqual({
+      services: 'list',
+      'services.1.packages': 'a',
+      'services.2.packages': 'b',
+      'services.2.packages.0.extras': 'b0',
+      'services.3.packages': 'c',
+      'services.11.packages': 'k',
+      'other.1.packages': 'x',
+    })
   })
 })

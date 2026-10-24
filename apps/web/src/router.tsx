@@ -162,9 +162,16 @@ const newEntryRoute = createRoute({
   errorComponent: ErrorView,
 })
 
+const ITEM_PATH = /^[\w-]+(\.[\w-]+)*$/
+
 const entryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/sites/$siteId/$collection/edit/$slug',
+  // The list item being edited, e.g. `services.1.packages.0`.
+  validateSearch: (search: Record<string, unknown>): { item?: string } =>
+    typeof search.item === 'string' && search.item.length <= 300 && ITEM_PATH.test(search.item)
+      ? { item: search.item }
+      : {},
   loader: ({ context, params }) =>
     Promise.all([
       context.queryClient.ensureQueryData(siteQuery(params.siteId)),

@@ -114,14 +114,26 @@ export function resolveChain(
     const item = asObject(items[index])
     const fields = itemFields(current, item)
     levels.push({ listPath: path, index, field: current, fields, item })
-    const child = fields?.find((f) => f.name === segments[1])
+    // Step through object fields (`meta.links`) to the list the next index is in.
+    let rest = segments.slice(1)
+    let holder = item
+    let holderFields = fields
+    let child = holderFields?.find((f) => f.name === rest[0])
+    let childPath = `${path}.${index}`
+    while (child?.type === 'object') {
+      holder = asObject(holder[child.name])
+      holderFields = child.fields ?? []
+      childPath = `${childPath}.${child.name}`
+      rest = rest.slice(1)
+      child = holderFields.find((f) => f.name === rest[0])
+    }
     if (!child || (child.type !== 'blocks' && !(child.type === 'list' && child.fields))) break
-    const childItems = item[child.name]
+    const childItems = holder[child.name]
     if (!Array.isArray(childItems)) break
-    path = `${path}.${index}.${child.name}`
+    path = `${childPath}.${child.name}`
     items = childItems
     current = child
-    segments = segments.slice(2)
+    segments = rest.slice(1)
   }
   return levels
 }
@@ -160,6 +172,47 @@ export const insertId = (ids: string[], at: number): string[] => [
 export const removeId = (ids: string[], at: number): string[] => ids.filter((_, i) => i !== at)
 
 export const moveIds = (ids: string[], from: number, to: number): string[] => move(ids, from, to)
+
+/** Where item `i` of a list ends up after a move, a removal (null: gone) or an insertion. */
+export const movedIndex =
+  (from: number, to: number) =>
+  (i: number): number => {
+    if (i === from) return to
+    if (from < to && i > from && i <= to) return i - 1
+    if (to < from && i >= to && i < from) return i + 1
+    return i
+  }
+export const removedIndex =
+  (at: number) =>
+  (i: number): number | null =>
+    i === at ? null : i > at ? i - 1 : i
+export const insertedIndex =
+  (at: number) =>
+  (i: number): number =>
+    i >= at ? i + 1 : i
+
+/**
+ * Re-keys entries stored by path under the items of the list at `listPath`
+ * (`${listPath}.${i}.…`) to the items' new indexes; entries remapped to null are dropped.
+ */
+export function rekeyPaths<T>(
+  map: Map<string, T>,
+  listPath: string,
+  remap: (i: number) => number | null,
+): Map<string, T> {
+  const prefix = `${listPath}.`
+  const next = new Map<string, T>()
+  for (const [key, v] of map) {
+    const m = key.startsWith(prefix) ? /^(\d+)(\..+)$/.exec(key.slice(prefix.length)) : null
+    if (!m) {
+      next.set(key, v)
+      continue
+    }
+    const i = remap(Number(m[1]))
+    if (i !== null) next.set(`${prefix}${i}${m[2]}`, v)
+  }
+  return next
+}
 
 /** Lists of objects and blocks are edited in the two-pane list editor. */
 export const usesListEditor = (field: FieldDef): boolean =>

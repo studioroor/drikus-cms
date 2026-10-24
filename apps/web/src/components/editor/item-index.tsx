@@ -15,7 +15,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical } from 'lucide-react'
+import { ChevronRight, GripVertical } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
 import { type FieldDef, previewUrl, useLabel } from '@/lib/content'
@@ -31,10 +31,10 @@ import {
 import { useEditor } from './context'
 
 /** The title shown for an item in rows and headers; blocks lead with their type. */
-export function useItemLabel(field: FieldDef) {
+export function useItemLabeler() {
   const { t } = useTranslation()
   const label = useLabel()
-  return (raw: unknown, index: number): string => {
+  return (field: FieldDef, raw: unknown, index: number): string => {
     const item = asObject(raw)
     const fields = itemFields(field, item)
     const title = fields ? itemTitle(fields, item) : null
@@ -43,6 +43,11 @@ export function useItemLabel(field: FieldDef) {
     const type = block ? label(block.label, block.name) : String(item[field.typeKey] ?? '?')
     return title ? `${type} · ${title}` : type
   }
+}
+
+export function useItemLabel(field: FieldDef) {
+  const labeler = useItemLabeler()
+  return (raw: unknown, index: number): string => labeler(field, raw, index)
 }
 
 /** Compact, sortable rows for the items of a list or blocks field. */
@@ -212,6 +217,7 @@ function Row({
             aria-label={t('editor.missing')}
           />
         )}
+        {size === 'sm' && <ChevronRight className="size-4 shrink-0 text-stone-400" aria-hidden />}
       </button>
     </li>
   )

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react'
-import { lazy, type ReactNode, Suspense, useId } from 'react'
+import { lazy, type ReactNode, Suspense, useContext, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/field'
@@ -10,7 +10,9 @@ import { asObject, isInlineList, itemTitle, move, usesListEditor } from '@/lib/l
 import { useEditor } from './context'
 import { ListEditor } from './list-editor'
 import { useListIds, useListMode } from './list-ids'
+import { ListNavContext } from './list-nav'
 import { MediaField } from './media'
+import { NestedRows } from './nested-rows'
 
 // Tiptap is large: load it only when a rich text field is on screen.
 const RichTextEditor = lazy(() =>
@@ -72,8 +74,9 @@ function FieldRow({
   const { missing } = useEditor()
   const isGroup = field.type === 'object' || field.type === 'list' || field.type === 'blocks'
   const isMissing = missing.has(path)
-  // The list editor's toolbar carries the label itself.
-  const inListEditor = useListMode(path, initialMode(field, value)) === 'editor'
+  // The list editor's toolbar carries the label itself (nested rows don't have one).
+  const nested = useContext(ListNavContext) !== null
+  const inListEditor = useListMode(path, initialMode(field, value)) === 'editor' && !nested
 
   const heading = (
     <span className="flex items-baseline gap-2">
@@ -288,7 +291,12 @@ function ListField({
   path: string
   onChange: (v: unknown) => void
 }) {
-  return useListMode(path, initialMode(field, value)) === 'editor' ? (
+  // Inside a list editor's pane, nested lists drill in rather than opening a second editor.
+  const nested = useContext(ListNavContext) !== null
+  const editor = useListMode(path, initialMode(field, value)) === 'editor'
+  return editor && nested ? (
+    <NestedRows field={field} value={value} path={path} onChange={onChange} />
+  ) : editor ? (
     <ListEditor field={field} value={value} path={path} onChange={onChange} />
   ) : (
     <ListInput field={field} value={value} path={path} onChange={onChange} />

@@ -123,6 +123,7 @@ export const en: Messages = {
     previous: 'Previous',
     next: 'Next',
     backToList: 'Back to {{label}}',
+    breadcrumb: 'Breadcrumb',
     noItems: 'Nothing here yet',
     remove: 'Remove',
     item: 'Item {{n}}',
