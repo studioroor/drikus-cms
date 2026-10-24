@@ -90,7 +90,7 @@ function Thumb({ siteId, item }: { siteId: string; item: MediaItem }) {
   }
   return (
     <img
-      src={previewUrl(item.src, siteId, 400) ?? ''}
+      src={previewUrl(item.src, siteId, 400, item.version) ?? ''}
       alt=""
       loading="lazy"
       className="aspect-square w-full rounded-lg bg-stone-100 object-cover"

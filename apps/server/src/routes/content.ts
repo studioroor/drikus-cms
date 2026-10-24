@@ -29,7 +29,15 @@ const limit = bodyLimit({ maxSize: 2 * 1024 * 1024 })
 // Uploads are checked against the site's own limit after parsing; this caps the request.
 const mediaLimit = bodyLimit({ maxSize: 51 * 1024 * 1024 })
 const SrcQuery = z.object({ src: z.string().min(1).max(500) })
-const MediaFileQuery = SrcQuery.extend({ w: z.coerce.number().int().optional() })
+const MediaFileQuery = SrcQuery.extend({
+  w: z.coerce.number().int().optional(),
+  // The file's blob SHA, when the client knows it: makes the URL safe to cache for good.
+  v: z.string().max(64).optional(),
+})
+// Repo files rarely change under the same path (uploads get a content hash in
+// their name), so browsers may show a cached copy while they check for a new one.
+const CACHE_BRIEFLY = 'private, max-age=3600, stale-while-revalidate=604800'
+const CACHE_FOREVER = 'private, max-age=31536000, immutable'
 const PublishBody = z.object({ message: z.string().trim().max(500).optional() })
 const CommitSha = z.string().regex(/^[0-9a-f]{40}$/)
 const RevisionParam = EntryParam.extend({ rev: z.union([z.literal('draft'), CommitSha]) })
@@ -130,7 +138,7 @@ export const contentRoutes = new Hono<ContentEnv>()
       if (!icon) return c.json({ error: 'not_found' as const }, 404)
       // Blobs are content-addressed, so the SHA is a perfect ETag.
       const etag = `"${icon.sha}"`
-      c.header('cache-control', 'private, max-age=300')
+      c.header('cache-control', CACHE_BRIEFLY)
       c.header('etag', etag)
       if (c.req.header('if-none-match') === etag) return c.body(null, 304)
       const bytes = await content.sync.blob(content.site, icon.sha)
@@ -198,11 +206,11 @@ export const contentRoutes = new Hono<ContentEnv>()
   .get('/media/file', validate('query', MediaFileQuery), async (c) => {
     const content = c.var.content
     if (!content) return c.json({ error: 'not_found' as const }, 404)
-    const { src, w } = c.req.valid('query')
+    const { src, w, v } = c.req.valid('query')
     const media = new MediaService(content)
     try {
       const width = w && media.isThumbWidth(w) ? w : undefined
-      const file = await media.read(src, width)
+      const file = await media.open(src, width)
       if (!file) {
         // Not a repo file (e.g. an image hosted elsewhere): let the live site serve it.
         if (content.site.siteUrl && src.startsWith('/') && !src.startsWith('//')) {
@@ -211,15 +219,15 @@ export const contentRoutes = new Hono<ContentEnv>()
         return c.json({ error: 'not_found' as const }, 404)
       }
       const etag = `"${file.etag}"`
-      c.header('cache-control', 'private, max-age=300')
+      c.header('cache-control', v === file.version ? CACHE_FOREVER : CACHE_BRIEFLY)
       c.header('etag', etag)
       if (c.req.header('if-none-match') === etag) return c.body(null, 304)
-      c.header('content-type', file.type.mime)
+      const { bytes, type } = await file.read()
+      c.header('content-type', type.mime)
       // Repo files are untrusted: lock the response down so nothing in it can run here.
       c.set('csp', "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox")
-      if (file.type.ext === 'svg' || file.type.kind === 'file')
-        c.header('content-disposition', 'attachment')
-      return c.body(new Uint8Array(file.bytes))
+      if (type.ext === 'svg' || type.kind === 'file') c.header('content-disposition', 'attachment')
+      return c.body(new Uint8Array(bytes))
     } catch (err) {
       if (err instanceof ContentError) return c.json({ error: err.code }, err.status)
       if (err instanceof GitHubError) return c.json({ error: githubFailure(err).error }, 502)

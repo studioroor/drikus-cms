@@ -184,6 +184,24 @@ describe('media API', () => {
     const thumb = await w.file(`${res.json.item.src}#right`, '&w=160')
     expect((await sharp(Buffer.from(await thumb.arrayBuffer())).metadata()).width).toBe(160)
 
+    // Plain URLs are cached briefly; URLs with the file's version are cached for good.
+    expect(full.headers.get('cache-control')).toContain('stale-while-revalidate')
+    const version = list.json.items[0].version
+    expect(version).toMatch(/^[0-9a-f]{40}$/)
+    expect(res.json.item.version).toBe(version)
+    const pinned = await w.file(res.json.item.src, `&w=160&v=${version}`)
+    expect(pinned.headers.get('cache-control')).toContain('immutable')
+    expect((await w.file(res.json.item.src, '&v=0000')).headers.get('cache-control')).not.toContain(
+      'immutable',
+    )
+    const revalidated = await w.ctx.app.request(
+      `${w.base}/media/file?src=${encodeURIComponent(res.json.item.src)}&w=160`,
+      {
+        headers: { cookie: w.editor.cookie, 'if-none-match': thumb.headers.get('etag') as string },
+      },
+    )
+    expect(revalidated.status).toBe(304)
+
     expect((await w.editor.get(`${w.base}/content`)).json.changes).toBe(1)
     const changes = await w.editor.get(`${w.base}/changes`)
     expect(changes.json.changes[0]).toMatchObject({
@@ -225,7 +243,12 @@ describe('media API', () => {
 
     expect(w.ctx.deps.db.select().from(stagedMedia).all()).toHaveLength(0)
     const list = await w.editor.get(`${w.base}/media`)
-    expect(list.json.items[0]).toMatchObject({ src: up.json.item.src, status: 'published' })
+    expect(list.json.items[0]).toMatchObject({
+      src: up.json.item.src,
+      status: 'published',
+      // Same bytes, same version: cached previews stay valid after publishing.
+      version: up.json.item.version,
+    })
     // Still previewable, now from GitHub.
     expect((await w.file(up.json.item.src)).status).toBe(200)
     // Uploading it again is a no-op.

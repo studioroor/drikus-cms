@@ -199,9 +199,19 @@ export interface MediaItem {
   name: string
   kind: Kind
   size: number
+  /** Git blob SHA of the bytes; changes whenever the file does, so URLs can carry it. */
+  version: string
   status: 'new' | 'published'
   uploadedAt: number | null
   uploadedBy: string | null
+}
+
+/** A media file found by `open`; its bytes are read only when actually needed. */
+export interface MediaFile {
+  /** Git blob SHA of the original file. */
+  version: string
+  etag: string
+  read(): Promise<{ bytes: Buffer; type: FileType }>
 }
 
 /** Small cache of generated thumbnails, by blob SHA and width. */
@@ -226,6 +236,25 @@ export class MediaService {
     return this.#db.select().from(stagedMedia).where(eq(stagedMedia.siteId, this.#siteId)).all()
   }
 
+  /** Paths of unpublished uploads, without loading their bytes. */
+  #stagedPaths(): Set<string> {
+    const rows = this.#db
+      .select({ path: stagedMedia.path })
+      .from(stagedMedia)
+      .where(eq(stagedMedia.siteId, this.#siteId))
+      .all()
+    return new Set(rows.map((r) => r.path))
+  }
+
+  #stagedBytes(path: string): Buffer | null {
+    const row = this.#db
+      .select({ bytes: stagedMedia.bytes })
+      .from(stagedMedia)
+      .where(and(eq(stagedMedia.siteId, this.#siteId), eq(stagedMedia.path, path)))
+      .get()
+    return row?.bytes ?? null
+  }
+
   #srcFor(settings: MediaSettings, path: string) {
     return `${settings.publicPath}${path.slice(settings.folder.length)}`
   }
@@ -247,7 +276,7 @@ export class MediaService {
     // Vite/Astro: files in public/ are served from the site root.
     candidates.push(`public${clean}`)
     const files = await this.content.files()
-    const staged = new Set(this.staged().map((m) => m.path))
+    const staged = this.#stagedPaths()
     return (
       candidates.find(
         (p) => isSafeRepoPath(p) && typeForPath(p) && (files.has(p) || staged.has(p)),
@@ -272,6 +301,7 @@ export class MediaService {
       name: m.path.split('/').pop() as string,
       kind: m.kind,
       size: m.size,
+      version: gitBlobSha(m.bytes),
       status: 'new' as const,
       uploadedAt: m.createdAt.getTime(),
       uploadedBy: m.uploadedBy ? (names.get(m.uploadedBy) ?? null) : null,
@@ -287,6 +317,7 @@ export class MediaService {
         name: entry.path.split('/').pop() as string,
         kind: type.kind,
         size: entry.size ?? 0,
+        version: entry.sha,
         status: 'published',
         uploadedAt: null,
         uploadedBy: null,
@@ -313,12 +344,13 @@ export class MediaService {
       name: processed.name,
       kind: processed.kind,
       size: processed.bytes.length,
+      version: gitBlobSha(processed.bytes),
       status: 'new',
       uploadedAt: Date.now(),
       uploadedBy: null,
     }
     // The same file is already on GitHub: nothing to stage.
-    if ((await this.content.files()).get(path) === gitBlobSha(processed.bytes)) {
+    if ((await this.content.files()).get(path) === item.version) {
       return { ...item, status: 'published', uploadedAt: null }
     }
     this.#db
@@ -350,39 +382,48 @@ export class MediaService {
     return { ok: true as const }
   }
 
-  /** Bytes of a media file (staged or published), optionally as a thumbnail. */
-  async read(
-    src: string,
-    width?: ThumbWidth,
-  ): Promise<{ bytes: Buffer; type: FileType; etag: string } | null> {
+  /**
+   * Finds a media file (staged or published), optionally as a thumbnail. The
+   * ETag is known before any bytes are loaded or thumbnails made, so a browser
+   * revalidating its cached copy gets a cheap 304.
+   */
+  async open(src: string, width?: ThumbWidth): Promise<MediaFile | null> {
     const path = await this.pathForSrc(src)
     const type = path ? typeForPath(path) : null
     if (!path || !type) return null
-    const staged = this.staged().find((m) => m.path === path)
-    const sha = staged ? gitBlobSha(staged.bytes) : (await this.content.files()).get(path)
+    const stagedBytes = this.#stagedBytes(path)
+    const sha = stagedBytes ? gitBlobSha(stagedBytes) : (await this.content.files()).get(path)
     if (!sha) return null
-    const bytes = staged ? staged.bytes : await this.content.sync.blob(this.content.site, sha)
+    const original = async () =>
+      stagedBytes ?? (await this.content.sync.blob(this.content.site, sha))
 
     // Thumbnails for raster images only; SVGs and files are served as they are.
-    if (width && type.kind === 'image' && type.ext !== 'svg') {
-      const key = `${sha}:${width}`
-      let thumb = thumbs.get(key)
-      if (!thumb) {
-        try {
-          thumb = await sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS })
-            .rotate()
-            .resize({ width, withoutEnlargement: true })
-            .webp({ quality: 75 })
-            .toBuffer()
-        } catch {
-          return { bytes, type, etag: sha }
-        }
-        if (thumbs.size >= MAX_THUMBS) thumbs.delete(thumbs.keys().next().value as string)
-        thumbs.set(key, thumb)
-      }
-      return { bytes: thumb, type: { ext: 'webp', mime: 'image/webp', kind: 'image' }, etag: key }
+    if (!width || type.kind !== 'image' || type.ext === 'svg') {
+      return { version: sha, etag: sha, read: async () => ({ bytes: await original(), type }) }
     }
-    return { bytes, type, etag: sha }
+    const key = `${sha}:${width}`
+    return {
+      version: sha,
+      etag: key,
+      read: async () => {
+        let thumb = thumbs.get(key)
+        if (!thumb) {
+          const bytes = await original()
+          try {
+            thumb = await sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS })
+              .rotate()
+              .resize({ width, withoutEnlargement: true })
+              .webp({ quality: 75 })
+              .toBuffer()
+          } catch {
+            return { bytes, type }
+          }
+          if (thumbs.size >= MAX_THUMBS) thumbs.delete(thumbs.keys().next().value as string)
+          thumbs.set(key, thumb)
+        }
+        return { bytes: thumb, type: { ext: 'webp', mime: 'image/webp', kind: 'image' } }
+      },
+    }
   }
 
   isThumbWidth(w: number): w is ThumbWidth {
