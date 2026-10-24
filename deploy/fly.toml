@@ -1,7 +1,8 @@
 # Fly.io: `fly launch --copy-config --no-deploy -c deploy/fly.toml`, then
 # `fly volumes create drikus_data --size 1` and `fly deploy -c deploy/fly.toml`.
 # GitHub App secrets: `fly secrets set GITHUB_APP_ID=… GITHUB_WEBHOOK_SECRET=…`
-# and `fly secrets set GITHUB_APP_PRIVATE_KEY="$(base64 -w0 github-app.pem)"`.
+# and `fly secrets set GITHUB_APP_PRIVATE_KEY="$(base64 < github-app.pem | tr -d '\n')"`.
+# Admin CLI: `fly ssh console -c deploy/fly.toml -C "drikus help"`.
 app = "drikus-cms"
 primary_region = "ams"
 
