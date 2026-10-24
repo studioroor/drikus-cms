@@ -9,7 +9,7 @@ import { type Data, entriesQuery, type FieldDef, useLabel } from '@/lib/content'
 import { asObject, isInlineList, itemTitle, move, usesListEditor } from '@/lib/list'
 import { useEditor } from './context'
 import { ListEditor } from './list-editor'
-import { useListIds } from './list-ids'
+import { useListIds, useListMode } from './list-ids'
 import { MediaField } from './media'
 
 // Tiptap is large: load it only when a rich text field is on screen.
@@ -73,7 +73,7 @@ function FieldRow({
   const isGroup = field.type === 'object' || field.type === 'list' || field.type === 'blocks'
   const isMissing = missing.has(path)
   // The list editor's toolbar carries the label itself.
-  const inListEditor = isListEditor(field, value)
+  const inListEditor = useListMode(path, initialMode(field, value)) === 'editor'
 
   const heading = (
     <span className="flex items-baseline gap-2">
@@ -268,18 +268,32 @@ export function FieldInput({
       )
     case 'list':
     case 'blocks':
-      return isListEditor(field, value) ? (
-        <ListEditor field={field} value={asArray(value)} path={path} onChange={onChange} />
-      ) : (
-        <ListInput field={field} value={asArray(value)} path={path} onChange={onChange} />
-      )
+      return <ListField field={field} value={asArray(value)} path={path} onChange={onChange} />
     case 'hidden':
       return null
   }
 }
 
-const isListEditor = (field: FieldDef, value: unknown) =>
-  usesListEditor(field) && !isInlineList(field, asArray(value))
+const initialMode = (field: FieldDef, value: unknown) =>
+  usesListEditor(field) && !isInlineList(field, asArray(value)) ? 'editor' : 'inline'
+
+function ListField({
+  field,
+  value,
+  path,
+  onChange,
+}: {
+  field: FieldDef
+  value: unknown[]
+  path: string
+  onChange: (v: unknown) => void
+}) {
+  return useListMode(path, initialMode(field, value)) === 'editor' ? (
+    <ListEditor field={field} value={value} path={path} onChange={onChange} />
+  ) : (
+    <ListInput field={field} value={value} path={path} onChange={onChange} />
+  )
+}
 
 function Group({ children }: { children: ReactNode }) {
   return <div className="rounded-xl border border-stone-200 bg-stone-50/60 p-4">{children}</div>

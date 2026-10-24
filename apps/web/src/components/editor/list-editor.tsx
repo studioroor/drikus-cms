@@ -131,7 +131,7 @@ export function ListEditor({
 
   return (
     <div ref={root} className="rounded-xl border border-stone-200 bg-white">
-      <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-t-xl border-b border-stone-200 bg-white/95 px-3 py-2 backdrop-blur">
+      <div className="sticky top-16 z-[5] flex flex-wrap items-center gap-2 rounded-t-xl border-b border-stone-200 bg-white/95 px-3 py-2 backdrop-blur">
         <span className="flex items-center gap-2 text-sm font-medium text-stone-800">
           {listLabel}
           <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-600">
@@ -319,7 +319,7 @@ function MoveMenu({
       {open && (
         <div
           role="menu"
-          className="absolute top-full right-0 z-30 mt-1 w-48 rounded-lg border border-stone-200 bg-white py-1 shadow-lg"
+          className="absolute top-full right-0 z-[6] mt-1 w-48 rounded-lg border border-stone-200 bg-white py-1 shadow-lg"
         >
           {options.map((o) => (
             <button
