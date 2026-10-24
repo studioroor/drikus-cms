@@ -44,7 +44,7 @@ Every field has `name` (required), and optionally `label`, `hint`, `required` an
 | ------------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------- |
 | `string` (default) | text                                                                     | `maxLength`                                                     |
 | `text`             | multi-line text                                                          | `maxLength`                                                     |
-| `richtext`         | Markdown, edited visually (bold, headings, lists, links, quotes)         |                                                                 |
+| `richtext`         | Markdown, edited visually (bold, headings, lists, links, quotes, images) | `imageStyles`, see below                                        |
 | `markdown`         | Markdown in a plain text box (use for MDX)                               |                                                                 |
 | `number`           | number                                                                   | `min`, `max`, `step`                                            |
 | `boolean`          | `true`/`false`                                                           |                                                                 |
@@ -59,6 +59,27 @@ Every field has `name` (required), and optionally `label`, `hint`, `required` an
 | `list`             | a list of groups (`fields`) or of single values (`field`)                | `minItems`, `maxItems`                                          |
 | `blocks`           | a list of typed sections, each `{ type: <block name>, …fields }`         | `blocks: [{ name, label, fields }]`, `typeKey` (default `type`) |
 | `hidden`           | kept as is, not shown                                                    |                                                                 |
+
+### Images in rich text
+
+Images in a `richtext` field are stored as Markdown: `![alt text](/uploads/photo.jpg "Caption")`.
+They can stand on their own line or sit inside a paragraph, so text flows around them. The
+editor previews paths starting with `/` from the site's URL.
+
+If your site reads a hint after `#` in the image path (for example `photo.jpg#right` to float an
+image), list the hints as `imageStyles` and editors can pick one per image:
+
+```yaml
+- name: body
+  type: richtext
+  imageStyles:
+    - { value: right, label: { nl: Rechts naast de tekst, en: Right of the text } }
+    - { value: left, label: Links naast de tekst }
+    - { value: medium, label: Middelgroot }
+    - small
+```
+
+What a hint does is up to your site; the CMS only writes it into the path.
 
 ## Drafts
 

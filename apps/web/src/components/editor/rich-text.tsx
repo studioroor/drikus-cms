@@ -1,10 +1,10 @@
-import { Markdown } from '@tiptap/markdown'
-import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
+import { NodeSelection } from '@tiptap/pm/state'
+import { type Editor, EditorContent, useEditor, useEditorState } from '@tiptap/react'
 import {
   Bold,
   Heading2,
   Heading3,
+  ImagePlus,
   Italic,
   Link2,
   List,
@@ -12,11 +12,20 @@ import {
   type LucideIcon,
   Quote,
   Redo2,
+  Trash2,
   Undo2,
 } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { type ReactNode, useEffect, useId, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Input, Select } from '@/components/ui/field'
 import { cn } from '@/lib/cn'
+import { previewUrl } from '@/lib/content'
+import { joinImageSrc, richTextExtensions, splitImageSrc } from './rich-text-extensions'
+
+export interface ImageStyle {
+  value: string
+  label: string
+}
 
 /** WYSIWYG editor that reads and writes Markdown. */
 export function RichTextEditor({
@@ -24,22 +33,20 @@ export function RichTextEditor({
   value,
   onChange,
   readOnly,
+  siteUrl = null,
+  imageStyles = [],
 }: {
   id: string
   value: string
   onChange: (markdown: string) => void
   readOnly?: boolean
+  siteUrl?: string | null
+  imageStyles?: ImageStyle[]
 }) {
   const { t } = useTranslation()
   const lastEmitted = useRef(value)
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [2, 3, 4] },
-        link: { openOnClick: false, autolink: true, protocols: ['mailto', 'tel'] },
-      }),
-      Markdown,
-    ],
+    extensions: richTextExtensions((path) => previewUrl(path, siteUrl)),
     content: value,
     contentType: 'markdown',
     editable: !readOnly,
@@ -78,6 +85,7 @@ export function RichTextEditor({
             ordered: e.isActive('orderedList'),
             quote: e.isActive('blockquote'),
             link: e.isActive('link'),
+            image: e.isActive('image') ? (e.getAttributes('image') as ImageAttrs) : null,
             canUndo: e.can().undo(),
             canRedo: e.can().redo(),
           }
@@ -149,6 +157,20 @@ export function RichTextEditor({
       },
     },
     {
+      icon: ImagePlus,
+      label: t('editor.rich.image'),
+      active: !!state?.image,
+      run: () => {
+        const path = window.prompt(t('editor.rich.imagePrompt'), '/uploads/')
+        if (!path?.trim() || path.trim() === '/uploads/') return
+        const at = editor.state.selection.from
+        chain()
+          .insertContent({ type: 'image', attrs: { src: path.trim() } })
+          .setNodeSelection(at)
+          .run()
+      },
+    },
+    {
       icon: Undo2,
       label: t('editor.rich.undo'),
       disabled: !state?.canUndo,
@@ -185,7 +207,111 @@ export function RichTextEditor({
           ))}
         </div>
       )}
+      {!readOnly && state?.image && (
+        <ImagePanel editor={editor} attrs={state.image} styles={imageStyles} />
+      )}
       <EditorContent editor={editor} />
+    </div>
+  )
+}
+
+interface ImageAttrs {
+  src: string | null
+  alt: string | null
+  title: string | null
+}
+
+/** Settings for the selected image: file, description, caption and style. */
+function ImagePanel({
+  editor,
+  attrs,
+  styles,
+}: {
+  editor: Editor
+  attrs: ImageAttrs
+  styles: ImageStyle[]
+}) {
+  const { t } = useTranslation()
+  const id = useId()
+  const src = attrs.src ?? ''
+  // Without configured styles the hint stays part of the path, so nothing gets lost.
+  const { path, style } = styles.length ? splitImageSrc(src) : { path: src, style: '' }
+  const options =
+    style && !styles.some((s) => s.value === style)
+      ? [...styles, { value: style, label: style }]
+      : styles
+
+  // Change attributes in place: replacing the node would drop the selection and close this panel.
+  const update = (next: Partial<ImageAttrs>) =>
+    editor.commands.command(({ tr }) => {
+      const { selection } = tr
+      if (!(selection instanceof NodeSelection)) return false
+      for (const [key, v] of Object.entries(next))
+        tr.setNodeAttribute(selection.from, key, v || null)
+      return true
+    })
+
+  return (
+    <div className="grid gap-3 border-b border-stone-200 bg-brand-50/60 px-3 py-3 sm:grid-cols-2">
+      <ImageSetting id={`${id}-path`} label={t('editor.rich.imagePath')}>
+        <Input
+          id={`${id}-path`}
+          value={path}
+          placeholder="/uploads/…"
+          onChange={(e) => update({ src: joinImageSrc(e.target.value, style) })}
+        />
+      </ImageSetting>
+      {styles.length > 0 && (
+        <ImageSetting id={`${id}-style`} label={t('editor.rich.imageStyle')}>
+          <Select
+            id={`${id}-style`}
+            value={style}
+            onChange={(e) => update({ src: joinImageSrc(path, e.target.value) })}
+          >
+            <option value="">{t('editor.rich.imageStyleNone')}</option>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </ImageSetting>
+      )}
+      <ImageSetting id={`${id}-alt`} label={t('editor.rich.imageAlt')}>
+        <Input
+          id={`${id}-alt`}
+          value={attrs.alt ?? ''}
+          onChange={(e) => update({ alt: e.target.value })}
+        />
+      </ImageSetting>
+      <ImageSetting id={`${id}-title`} label={t('editor.rich.imageCaption')}>
+        <Input
+          id={`${id}-title`}
+          value={attrs.title ?? ''}
+          onChange={(e) => update({ title: e.target.value })}
+        />
+      </ImageSetting>
+      <div className="sm:col-span-2">
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().deleteSelection().run()}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-red-700 hover:bg-red-50"
+        >
+          <Trash2 className="size-4" />
+          {t('editor.rich.imageRemove')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ImageSetting({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <label htmlFor={id} className="block text-xs font-medium text-stone-700">
+        {label}
+      </label>
+      {children}
     </div>
   )
 }

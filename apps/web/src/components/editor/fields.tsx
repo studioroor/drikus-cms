@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/field'
 import { cn } from '@/lib/cn'
-import { type Data, entriesQuery, type FieldDef, useLabel } from '@/lib/content'
+import { type Data, entriesQuery, type FieldDef, previewUrl, useLabel } from '@/lib/content'
 import { useEditor } from './context'
 
 // Tiptap is large: load it only when a rich text field is on screen.
@@ -164,7 +164,18 @@ export function FieldInput({
             <div className="h-48 animate-pulse rounded-lg border border-stone-200 bg-stone-50" />
           }
         >
-          <RichTextEditor id={id} value={text} onChange={setText} readOnly={readOnly} />
+          <RichTextEditor
+            id={id}
+            value={text}
+            onChange={setText}
+            readOnly={readOnly}
+            siteUrl={siteUrl}
+            imageStyles={(field.imageStyles ?? []).map((s) =>
+              typeof s === 'string'
+                ? { value: s, label: s }
+                : { value: s.value, label: label(s.label, s.value) },
+            )}
+          />
         </Suspense>
       )
     case 'number':
@@ -250,14 +261,7 @@ export function FieldInput({
       return <ReferenceInput id={id} field={field} value={value} onChange={onChange} />
     case 'image':
     case 'file': {
-      const preview =
-        field.type === 'image' &&
-        text &&
-        (/^https?:\/\//.test(text) || (text.startsWith('/') && siteUrl))
-          ? text.startsWith('/')
-            ? `${siteUrl?.replace(/\/$/, '')}${text}`
-            : text
-          : null
+      const preview = field.type === 'image' ? previewUrl(text, siteUrl) : null
       return (
         <div className="space-y-2">
           <Input

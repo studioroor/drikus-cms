@@ -14,7 +14,7 @@ collections:
     fields:
       - { name: title, required: true }
       - { name: date, type: date }
-      - { name: body, type: richtext }
+      - { name: body, type: richtext, imageStyles: [right, { value: small, label: Klein }] }
   - name: home
     file: src/content/pages/home.json
     fields:
@@ -39,6 +39,17 @@ describe('parseConfig', () => {
       ['home', 'json'],
     ])
     expect(res.config.collections[0]?.fields[0]?.type).toBe('string')
+    expect(res.config.collections[0]?.fields[2]?.imageStyles).toEqual([
+      'right',
+      { value: 'small', label: 'Klein' },
+    ])
+  })
+
+  test('rejects image styles that would break an image path', () => {
+    const res = parseConfig(
+      'collections: [{ name: x, folder: x, fields: [{ name: body, type: richtext, imageStyles: ["a b"] }] }]',
+    )
+    expect(res.ok).toBe(false)
   })
 
   test.each([

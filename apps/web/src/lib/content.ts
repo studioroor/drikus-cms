@@ -95,6 +95,13 @@ export function humanize(name: string) {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
+/** Where to load a stored image path from for a preview, or null if it can't be shown. */
+export function previewUrl(path: string, siteUrl: string | null): string | null {
+  if (/^https?:\/\//.test(path)) return path
+  if (path.startsWith('/') && siteUrl) return `${siteUrl.replace(/\/$/, '')}${path}`
+  return null
+}
+
 /** Resolves config labels, which can be a string or one per UI language. */
 export function useLabel() {
   const { i18n } = useTranslation()
