@@ -26,7 +26,7 @@ import { appendUpTo, move } from '@/lib/list'
 import { useErrorMessage } from '@/lib/queries'
 import { useEditor } from './context'
 import { useListIds, useListIdsFor } from './list-ids'
-import { DropZone, MediaPicker, useUpload } from './media'
+import { DropZone, MediaPicker, useMounted, useUpload } from './media'
 
 const tileBox = 'relative aspect-square overflow-hidden rounded-lg'
 
@@ -69,6 +69,10 @@ export function ImageGrid({
   latest.current = value
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  // Once the grid is gone (another item selected, the item deleted) that handler is stale and
+  // would revert later edits or bring a deleted item back: stop, and leave the rest of the batch
+  // unuploaded. Files already uploaded stay in the library.
+  const mounted = useMounted()
 
   const max = field.maxItems
   const full = max !== undefined && value.length >= max
@@ -78,7 +82,7 @@ export function ImageGrid({
   const append = (items: string[]) => {
     const before = latest.current
     const { list, added } = appendUpTo<unknown>(before, items, max)
-    if (!added) return
+    if (!added || !mounted.current) return
     for (let i = 0; i < added; i++) idsFor(path, before.length + i).insert(before.length + i)
     latest.current = list
     onChangeRef.current(list)
@@ -86,6 +90,7 @@ export function ImageGrid({
   const uploadFiles = async (files: File[]) => {
     setErrors([])
     for (const [n, file] of files.entries()) {
+      if (!mounted.current) return
       if (max !== undefined && latest.current.length >= max) break
       setPending(files.length - n)
       try {

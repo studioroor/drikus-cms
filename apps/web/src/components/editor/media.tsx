@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, FileText, ImagePlus, Search, Trash2, Upload } from 'lucide-react'
-import { type DragEvent, type ReactNode, useId, useRef, useState } from 'react'
+import { type DragEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -28,6 +28,22 @@ export function useUpload(siteId: string) {
       void queryClient.invalidateQueries({ queryKey: ['sites', siteId, 'changes'] })
     },
   })
+}
+
+/**
+ * False once the component has unmounted. An upload keeps running after its field closes (the
+ * list editor unmounts item panes routinely); its result must then not be applied, because the
+ * change handler from the last render would write back the entry as it was at that moment.
+ */
+export function useMounted() {
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  return mounted
 }
 
 /**
@@ -367,6 +383,19 @@ export function MediaField({
   const upload = useUpload(siteId)
   const [picking, setPicking] = useState(false)
   const preview = kind === 'image' && value ? previewUrl(value, siteId, 400) : null
+  // An upload finishes after later renders: apply it through the latest handler, or not at all
+  // once the field is gone (the file stays in the library). See useMounted.
+  const mounted = useMounted()
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const uploadFile = async (file: File) => {
+    try {
+      const item = await upload.mutateAsync(file)
+      if (mounted.current) onChangeRef.current(item.src)
+    } catch {
+      // Shown through upload.error.
+    }
+  }
   const name = value.split(/[?#]/)[0]?.split('/').pop() ?? ''
 
   return (
@@ -374,7 +403,7 @@ export function MediaField({
       <DropZone
         kind={kind}
         disabled={readOnly || upload.isPending}
-        onFile={(file) => upload.mutate(file, { onSuccess: (item) => onChange(item.src) })}
+        onFile={(file) => void uploadFile(file)}
         className="rounded-xl border border-stone-200 bg-white p-3"
       >
         {(browse) => (
