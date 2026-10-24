@@ -63,9 +63,12 @@ export function ImageGrid({
   const [pending, setPending] = useState(0)
   const [errors, setErrors] = useState<{ id: string; text: string }[]>([])
 
-  // Uploads finish one by one after renders; they append to the latest list, not a stale one.
+  // Uploads finish one by one after renders; they append to the latest list through the
+  // latest change handler (an old one would write back the entry as it was at drop time).
   const latest = useRef(value)
   latest.current = value
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
 
   const max = field.maxItems
   const full = max !== undefined && value.length >= max
@@ -78,7 +81,7 @@ export function ImageGrid({
     if (!added) return
     for (let i = 0; i < added; i++) idsFor(path, before.length + i).insert(before.length + i)
     latest.current = list
-    onChange(list)
+    onChangeRef.current(list)
   }
   const uploadFiles = async (files: File[]) => {
     setErrors([])
