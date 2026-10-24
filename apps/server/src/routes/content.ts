@@ -89,6 +89,8 @@ function clientCollection(c: Collection) {
     kind: c.folder ? ('folder' as const) : ('file' as const),
     format: c.format,
     summary: c.summary ?? null,
+    sortBy: c.sortBy ?? null,
+    sortOrder: c.sortOrder,
     create: c.create,
     delete: c.delete,
     fields: c.fields,

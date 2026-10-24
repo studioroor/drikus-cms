@@ -140,6 +140,19 @@ const siteRoute = createRoute({
 const collectionRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/sites/$siteId/$collection',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { page?: number; sort?: string; dir?: 'asc' | 'desc' } => {
+    const page = Number(search.page)
+    return {
+      page: Number.isInteger(page) && page > 1 && page < 100000 ? page : undefined,
+      sort:
+        typeof search.sort === 'string' && search.sort.length <= 100 && search.sort
+          ? search.sort
+          : undefined,
+      dir: search.dir === 'asc' || search.dir === 'desc' ? search.dir : undefined,
+    }
+  },
   loader: ({ context, params }) =>
     Promise.all([
       context.queryClient.ensureQueryData(siteQuery(params.siteId)),
@@ -162,9 +175,16 @@ const newEntryRoute = createRoute({
   errorComponent: ErrorView,
 })
 
+const ITEM_PATH = /^[\w-]+(\.[\w-]+)*$/
+
 const entryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/sites/$siteId/$collection/edit/$slug',
+  // The list item being edited, e.g. `services.1.packages.0`.
+  validateSearch: (search: Record<string, unknown>): { item?: string } =>
+    typeof search.item === 'string' && search.item.length <= 300 && ITEM_PATH.test(search.item)
+      ? { item: search.item }
+      : {},
   loader: ({ context, params }) =>
     Promise.all([
       context.queryClient.ensureQueryData(siteQuery(params.siteId)),
