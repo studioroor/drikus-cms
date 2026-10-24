@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import { siteMembers, sites } from '../db/schema'
 import type { AuthedEnv } from '../env'
 import { requireSiteAccess, requireUser } from '../middleware/auth'
+import { contentRoutes } from './content'
 
 function toPublicSite(s: typeof sites.$inferSelect) {
   return { id: s.id, name: s.name, siteUrl: s.siteUrl }
@@ -37,3 +38,4 @@ export const siteRoutes = new Hono<AuthedEnv>()
     if (!site) return c.json({ error: 'not_found' as const }, 404)
     return c.json({ site: toPublicSite(site) })
   })
+  .route('/:siteId', contentRoutes)

@@ -8,6 +8,7 @@ Drikus CMS manages its own users and writes to repositories through a single Git
 - Runs as a single Docker container with SQLite, on a Synology NAS or Fly.io
 
 The full design and roadmap is in [`docs/plan.md`](docs/plan.md).
+How to describe a site's content is in [`docs/content-config.md`](docs/content-config.md).
 
 ## Status
 
@@ -16,7 +17,7 @@ The full design and roadmap is in [`docs/plan.md`](docs/plan.md).
 | 0     | Scaffold: Bun workspaces, Hono, React, Drizzle/SQLite, Docker, CI                     | ✅    |
 | 1     | Accounts: superadmin, invites, sessions, 2FA, users/sites/memberships, audit log, CLI | ✅    |
 | 2     | GitHub App: scoped installation tokens, repo linking, webhooks, cache                 | ✅    |
-| 3     | Content schema (`.drikus/config.yml`) + editor                                        | ⏳    |
+| 3     | Content schema (`.drikus/config.yml`) + editor                                        | ✅    |
 | 4     | Drafts → one-commit publish, deploy status                                            | ⏳    |
 | 5     | Media uploads                                                                         | ⏳    |
 | 6     | Multilingual content                                                                  | ⏳    |

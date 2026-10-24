@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from './components/ui/button'
 import { Card } from './components/ui/card'
 import { EmptyState, FullPageSpinner } from './components/ui/feedback'
+import { entriesQuery, entryQuery, siteContentQuery } from './lib/content'
 import { setLocale } from './lib/i18n'
 import {
   adminSitesQuery,
@@ -27,6 +28,8 @@ import { ActivityPage, auditQuery } from './routes/admin/activity'
 import { SitesPage } from './routes/admin/sites'
 import { UsersPage } from './routes/admin/users'
 import { AppLayout } from './routes/app-layout'
+import { CollectionPage } from './routes/collection'
+import { EntryPage, NewEntryPage } from './routes/entry'
 import { HomePage } from './routes/home'
 import { LoginPage } from './routes/login'
 import { SitePage, siteQuery } from './routes/site'
@@ -120,8 +123,50 @@ const homeRoute = createRoute({
 const siteRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/sites/$siteId',
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(siteQuery(params.siteId)),
+  loader: ({ context, params }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(siteQuery(params.siteId)),
+      context.queryClient.fetchQuery(siteContentQuery(params.siteId)),
+    ]),
   component: SitePage,
+  errorComponent: ErrorView,
+})
+
+const collectionRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/sites/$siteId/$collection',
+  loader: ({ context, params }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(siteQuery(params.siteId)),
+      context.queryClient.ensureQueryData(siteContentQuery(params.siteId)),
+      context.queryClient.fetchQuery(entriesQuery(params.siteId, params.collection)),
+    ]),
+  component: CollectionPage,
+  errorComponent: ErrorView,
+})
+
+const newEntryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/sites/$siteId/$collection/new',
+  loader: ({ context, params }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(siteQuery(params.siteId)),
+      context.queryClient.ensureQueryData(siteContentQuery(params.siteId)),
+    ]),
+  component: NewEntryPage,
+  errorComponent: ErrorView,
+})
+
+const entryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/sites/$siteId/$collection/edit/$slug',
+  loader: ({ context, params }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(siteQuery(params.siteId)),
+      context.queryClient.ensureQueryData(siteContentQuery(params.siteId)),
+      context.queryClient.fetchQuery(entryQuery(params.siteId, params.collection, params.slug)),
+    ]),
+  component: EntryPage,
   errorComponent: ErrorView,
 })
 
@@ -185,6 +230,9 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     homeRoute,
     siteRoute,
+    collectionRoute,
+    newEntryRoute,
+    entryRoute,
     accountRoute,
     adminRoute.addChildren([adminIndexRoute, adminUsersRoute, adminSitesRoute, adminActivityRoute]),
   ]),

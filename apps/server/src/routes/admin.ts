@@ -3,7 +3,16 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { revokeUserSessions } from '../auth/sessions'
 import { createAuthToken, inviteLink } from '../auth/tokens'
-import { auditLog, LOCALES, ROLES, type Site, siteMembers, sites, users } from '../db/schema'
+import {
+  auditLog,
+  drafts,
+  LOCALES,
+  ROLES,
+  type Site,
+  siteMembers,
+  sites,
+  users,
+} from '../db/schema'
 import type { AuthedEnv } from '../env'
 import { resolveRepoLink } from '../github/link'
 import { audit } from '../lib/audit'
@@ -332,10 +341,16 @@ export const adminRoutes = new Hono<AuthedEnv>()
           }
         }
       }
-      db.update(sites)
-        .set({ ...rest, ...link, updatedAt: new Date() })
-        .where(eq(sites.id, id))
-        .run()
+      db.transaction((tx) => {
+        tx.update(sites)
+          .set({ ...rest, ...link, updatedAt: new Date() })
+          .where(eq(sites.id, id))
+          .run()
+        // Drafts belong to the old repository's files; they can't be published elsewhere.
+        if ('repoId' in link && link.repoId !== site.repoId) {
+          tx.delete(drafts).where(eq(drafts.siteId, id)).run()
+        }
+      })
       audit(db, {
         actorId: c.var.user.id,
         action: 'site.updated',

@@ -1,13 +1,12 @@
 import { eq, isNotNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { CONFIG_PATHS } from '../content/service'
 import { sites } from '../db/schema'
 import type { AuthedEnv } from '../env'
 import { githubFailure } from '../github/link'
 import { isLinked, SiteSync } from '../github/sync'
 import { validate } from '../lib/http'
-
-export const CONFIG_PATHS = ['.drikus/config.yml', '.drikus/config.yaml', '.drikus/config.json']
 
 /** Superadmin-only GitHub endpoints; mounted inside the admin routes. */
 export const adminGithubRoutes = new Hono<AuthedEnv>()

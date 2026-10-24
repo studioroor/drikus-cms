@@ -10,13 +10,15 @@
     "start": "bun --env-file=../../.env src/index.ts",
     "cli": "bun --env-file=../../.env src/cli.ts",
     "db:generate": "drizzle-kit generate",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "schema": "bun scripts/export-schema.ts"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.9.1",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.13",
     "otpauth": "^9.5.2",
+    "yaml": "2.9.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
