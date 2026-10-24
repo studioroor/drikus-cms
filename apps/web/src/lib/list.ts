@@ -191,6 +191,10 @@ export const insertedIndex =
   (i: number): number =>
     i >= at ? i + 1 : i
 
+/** Whether `path` lies inside one of the items of the list at `listPath`. */
+export const insideItemOf = (path: string, listPath: string): boolean =>
+  path.startsWith(`${listPath}.`)
+
 /**
  * Re-keys entries stored by path under the items of the list at `listPath`
  * (`${listPath}.${i}.…`) to the items' new indexes; entries remapped to null are dropped.

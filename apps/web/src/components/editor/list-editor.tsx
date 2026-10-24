@@ -8,7 +8,15 @@ import { Input } from '@/components/ui/field'
 import { Toast } from '@/components/ui/toast'
 import { cn } from '@/lib/cn'
 import { type Data, type FieldDef, useLabel } from '@/lib/content'
-import { asObject, type ChainLevel, move, movedIndex, resolveChain, setIn } from '@/lib/list'
+import {
+  asObject,
+  type ChainLevel,
+  insideItemOf,
+  move,
+  movedIndex,
+  resolveChain,
+  setIn,
+} from '@/lib/list'
 import { useContainerWidth } from '@/lib/use-container-width'
 import { useEditor } from './context'
 import { BlockPicker, FieldList } from './fields'
@@ -102,7 +110,6 @@ export function ListEditor({
       resetScroll: false,
     })
   }
-  const nav = { select }
 
   // A stale or invalid path shows its deepest valid level; wide screens default to the first.
   const explicit = resolveChain(field, path, value, selected)
@@ -122,8 +129,9 @@ export function ListEditor({
     onChange(setIn(value, segmentsOf(path, listPath), next))
   /** A pending Undo for a list inside the item that changes position would land elsewhere. */
   const dropUndoUnder = (listPath: string) => {
-    if (removed?.listPath.startsWith(`${listPath}.`)) setRemoved(null)
+    if (removed && insideItemOf(removed.listPath, listPath)) setRemoved(null)
   }
+  const nav = { select, moved: dropUndoUnder }
 
   useEffect(() => {
     if (!focusNew.current) return

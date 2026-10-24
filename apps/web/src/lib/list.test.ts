@@ -3,6 +3,7 @@ import type { Data, FieldDef } from './content'
 import {
   hasImageField,
   insertedIndex,
+  insideItemOf,
   isInlineList,
   itemFields,
   itemSnippet,
@@ -226,5 +227,15 @@ describe('rekeyPaths', () => {
       'services.11.packages': 'k',
       'other.1.packages': 'x',
     })
+  })
+})
+
+describe('insideItemOf', () => {
+  test('a path inside an item of the list', () => {
+    expect(insideItemOf('services.1.packages.0.extras', 'services.1.packages')).toBe(true)
+    expect(insideItemOf('services.1.packages', 'services')).toBe(true)
+    expect(insideItemOf('services.1.packages', 'services.1.packages')).toBe(false)
+    expect(insideItemOf('services.10.packages', 'services.1')).toBe(false)
+    expect(insideItemOf('other.0.x', 'services')).toBe(false)
   })
 })

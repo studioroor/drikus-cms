@@ -6,4 +6,6 @@ import { createContext } from 'react'
  */
 export const ListNavContext = createContext<{
   select(path: string | null, mode: 'push' | 'replace'): void
+  /** Call after reordering the list at `listPath`, so state that points into its items is dropped. */
+  moved(listPath: string): void
 } | null>(null)

@@ -51,6 +51,7 @@ export function NestedRows({
   const moveItem = (from: number, to: number) => {
     ids.move(from, to)
     onChange(move(value, from, to))
+    nav?.moved(path)
   }
 
   return (
