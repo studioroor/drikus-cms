@@ -128,6 +128,7 @@ describe('publishing', () => {
         collection: 'posts',
         slug: 'zonder-datum',
         title: 'Zonder datum',
+        locale: null,
         fields: ['date'],
       },
     ])
@@ -144,7 +145,7 @@ describe('publishing', () => {
 
     const preview = await w.editor.get(`${w.base}/publish`)
     expect(preview.json.problems).toEqual([
-      { kind: 'conflict', collection: 'posts', slug: 'oud', title: 'Van Anna' },
+      { kind: 'conflict', collection: 'posts', slug: 'oud', title: 'Van Anna', locale: null },
     ])
     expect((await w.editor.post(`${w.base}/publish`, {})).json.error).toBe('publish_blocked')
 

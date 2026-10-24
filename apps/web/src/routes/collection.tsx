@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Layers, Plus, Search } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Breadcrumbs, StatusBadge } from '@/components/editor/status'
+import { Breadcrumbs, LocaleDots, StatusBadge } from '@/components/editor/status'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/feedback'
 import { Input, Select } from '@/components/ui/field'
@@ -189,7 +189,11 @@ export function CollectionPage() {
                       {formatValue(e.values[sortKey])}
                     </span>
                   )}
-                  <StatusBadge status={e.status} />
+                  {e.locales ? (
+                    <LocaleDots locales={e.locales} />
+                  ) : (
+                    <StatusBadge status={e.status} />
+                  )}
                   <ChevronRight className="size-4 shrink-0 text-stone-400" />
                 </Link>
               </li>

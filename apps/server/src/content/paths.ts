@@ -1,4 +1,4 @@
-import type { Collection } from './config'
+import { type Collection, LOCALE_TOKEN } from './config'
 import { type Data, FORMAT_EXTENSIONS } from './format'
 
 /** The only slugs accepted from clients: a plain file name without extension. */
@@ -36,28 +36,67 @@ export function renderSlug(template: string, data: Data, now = new Date()): stri
   return slugify(rendered)
 }
 
-/** Repository paths a collection may contain, given the files in the repo tree. */
+/** Fills in the language of a path template. */
+export function localize(template: string, locale: string | null): string {
+  return locale ? template.replaceAll(LOCALE_TOKEN, locale) : template
+}
+
+/**
+ * The file of an entry (in one language, for translated collections), given
+ * the files in the repo tree. Only plain slugs inside the collection's folder.
+ */
 export function entryPathFor(
   collection: Collection,
   slug: string,
   existing: Set<string>,
+  locale: string | null = null,
 ): string | null {
-  if (collection.file) return slug === SINGLETON_SLUG ? collection.file : null
+  if (collection.translation && !locale) return null
+  const loc = collection.translation === 'files' ? locale : null
+  if (collection.file) return slug === SINGLETON_SLUG ? localize(collection.file, loc) : null
   if (!collection.folder || !isValidSlug(slug)) return null
-  const candidates = FORMAT_EXTENSIONS[collection.format].map(
-    (ext) => `${collection.folder}/${slug}.${ext}`,
-  )
+  const folder = localize(collection.folder, loc)
+  const name = collection.translation === 'suffix' ? `${slug}.${locale}` : slug
+  const candidates = FORMAT_EXTENSIONS[collection.format].map((ext) => `${folder}/${name}.${ext}`)
   return candidates.find((p) => existing.has(p)) ?? (candidates[0] as string)
 }
 
-/** Extracts the slug from a file directly inside a folder collection, or null. */
+/**
+ * Which entry (and language) a file directly inside a folder collection is,
+ * or null if it isn't one.
+ */
+export function entryForPath(
+  collection: Collection,
+  path: string,
+  locales: string[] = [],
+): { slug: string; locale: string | null } | null {
+  if (!collection.folder) return null
+  const folders: [string, string | null][] =
+    collection.translation === 'files'
+      ? locales.map((l) => [localize(collection.folder as string, l), l])
+      : [[collection.folder, null]]
+  for (const [folder, folderLocale] of folders) {
+    if (!path.startsWith(`${folder}/`)) continue
+    const name = path.slice(folder.length + 1)
+    if (name.includes('/')) return null
+    const dot = name.lastIndexOf('.')
+    if (dot <= 0) return null
+    const ext = name.slice(dot + 1).toLowerCase()
+    if (!FORMAT_EXTENSIONS[collection.format].includes(ext)) return null
+    let slug = name.slice(0, dot)
+    let locale = folderLocale
+    if (collection.translation === 'suffix') {
+      const at = slug.lastIndexOf('.')
+      locale = at > 0 ? slug.slice(at + 1) : null
+      if (!locale || !locales.includes(locale)) return null
+      slug = slug.slice(0, at)
+    }
+    return isValidSlug(slug) ? { slug, locale } : null
+  }
+  return null
+}
+
+/** Extracts the slug from a file directly inside an untranslated folder collection, or null. */
 export function slugForPath(collection: Collection, path: string): string | null {
-  if (!collection.folder || !path.startsWith(`${collection.folder}/`)) return null
-  const name = path.slice(collection.folder.length + 1)
-  if (name.includes('/')) return null
-  const dot = name.lastIndexOf('.')
-  if (dot <= 0) return null
-  const ext = name.slice(dot + 1).toLowerCase()
-  const slug = name.slice(0, dot)
-  return FORMAT_EXTENSIONS[collection.format].includes(ext) && isValidSlug(slug) ? slug : null
+  return entryForPath(collection, path)?.slug ?? null
 }

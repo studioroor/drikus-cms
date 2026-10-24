@@ -13,7 +13,7 @@ import {
 } from '../db/schema'
 import { GitHubError, type TreeChange } from '../github/app'
 import { gitBlobSha } from '../github/sha'
-import type { Collection, Config } from './config'
+import { type Collection, type Config, siteLocales } from './config'
 import { checkFields } from './fields'
 import { isSafeRepoPath, MEDIA_COLLECTION, MediaService } from './media'
 import { entryPathFor } from './paths'
@@ -41,6 +41,7 @@ export function summarize(draftList: Draft[], media: StagedMedia[] = []): Publis
     ...draftList.map((d) => ({
       collection: d.collection,
       slug: d.slug,
+      locale: d.locale,
       path: d.path,
       status: changeStatus(d),
       title: draftTitle(d),
@@ -70,12 +71,24 @@ export function findProblems(
 ): PublishProblem[] {
   const problems: PublishProblem[] = []
   const paths = new Set(files.keys())
+  const site = siteLocales(config)
   for (const draft of draftList) {
-    const base = { collection: draft.collection, slug: draft.slug, title: draftTitle(draft) }
+    const base = {
+      collection: draft.collection,
+      slug: draft.slug,
+      title: draftTitle(draft),
+      locale: draft.locale,
+    }
     const collection: Collection | undefined = config.collections.find(
       (c) => c.name === draft.collection,
     )
-    if (!collection || entryPathFor(collection, draft.slug, paths) !== draft.path) {
+    // Data files with all languages have no language of their own; any language gives their path.
+    const locale = collection?.translation ? (draft.locale ?? site?.main ?? null) : null
+    if (
+      !collection ||
+      (collection.translation && draft.locale && !site?.locales.includes(draft.locale)) ||
+      entryPathFor(collection, draft.slug, paths, locale) !== draft.path
+    ) {
       problems.push({ kind: 'config', ...base })
       continue
     }
@@ -87,10 +100,21 @@ export function findProblems(
       continue
     }
     if (draft.action === 'upsert') {
-      const missing = checkFields(collection.fields, draft.data ?? {})
-        .filter((i) => i.code === 'required')
-        .map((i) => i.path)
-      if (missing.length) problems.push({ kind: 'required', ...base, fields: missing })
+      // Check each language section of a data file with all languages; else the file itself.
+      const sections =
+        collection.translation === 'sections'
+          ? (site?.locales ?? [])
+              .filter((l) => draft.data?.[l] && typeof draft.data[l] === 'object')
+              .map((l) => ({ locale: l, data: draft.data?.[l] as Record<string, unknown> }))
+          : [{ locale: draft.locale, data: draft.data ?? {} }]
+      for (const section of sections) {
+        const missing = checkFields(collection.fields, section.data)
+          .filter((i) => i.code === 'required')
+          .map((i) => i.path)
+        if (missing.length) {
+          problems.push({ ...base, kind: 'required', locale: section.locale, fields: missing })
+        }
+      }
     }
   }
   return problems
@@ -146,8 +170,10 @@ export class PublishService {
   }
 
   /** Resolves a conflict: keep the draft (overwriting GitHub) or drop it (keeping GitHub's version). */
-  async resolve(collection: string, slug: string, keep: 'mine' | 'theirs') {
-    const draft = this.content.drafts(collection).find((d) => d.slug === slug)
+  async resolve(collection: string, slug: string, keep: 'mine' | 'theirs', locale?: string | null) {
+    const draft = this.content
+      .drafts(collection)
+      .find((d) => d.slug === slug && (!locale || d.locale === locale))
     if (!draft) throw new ContentError('not_found', 404)
     const where = and(eq(drafts.siteId, this.#site.id), eq(drafts.path, draft.path))
     // Always re-read the branch, so the editor sees the version GitHub has now.

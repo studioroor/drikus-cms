@@ -38,6 +38,7 @@ icon: src/assets/brand/mark.svg
 | `summary`              |              | Field shown as the entry's title in lists (default: `title` or the first text field)                              |
 | `sortBy`, `sortOrder`  |              | Sort lists by a field, `asc` (default) or `desc`                                                                  |
 | `create`, `delete`     |              | Allow editors to add or delete entries (default `true`)                                                           |
+| `i18n`                 |              | `true`: one version per site language, see [Multiple languages](#multiple-languages)                              |
 | `fields`               | required     | The form, see below                                                                                               |
 
 Paths can't start with `/`, contain `..`, or point inside `.git`, `.github` or `.drikus`. The CMS
@@ -50,6 +51,7 @@ Frontmatter keys that aren't in `fields` (for example Astro's `layout`) are kept
 ## Fields
 
 Every field has `name` (required), and optionally `label`, `hint`, `required` and `default`.
+In translated collections, top-level fields can also set `i18n: false` (see below).
 
 | `type`             | Stores                                                                    | Options                                                         |
 | ------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------- |
@@ -145,6 +147,51 @@ media:
   deleted; published files stay (pages may use them).
 - Previews in the editor come from the CMS itself, so new uploads show before they're published.
   Paths that aren't in the repository are previewed from the live site.
+
+## Multiple languages
+
+Sites with content in more than one language list their languages once. The first one (or
+`default`) is the main language: lists show its titles and new entries start in it.
+
+```yaml
+i18n:
+  locales: [nl, en]
+  default: nl # optional, defaults to the first
+```
+
+Then mark which collections are translated. The CMS supports these layouts:
+
+| Layout                           | Config                                        | Files                                                |
+| -------------------------------- | --------------------------------------------- | ---------------------------------------------------- |
+| A folder per language            | `folder: src/content/posts/{{locale}}`        | `src/content/posts/nl/brood.md`, `…/en/brood.md`     |
+| The language in the file name    | `folder: src/content/team` + `i18n: true`     | `src/content/team/anna.nl.yaml`, `…/anna.en.yaml`    |
+| A file per language              | `file: src/content/{{locale}}/about.md`       | `src/content/nl/about.md`, `src/content/en/about.md` |
+| One data file with all languages | `file: src/data/settings.json` + `i18n: true` | `{ "nl": { … }, "en": { … } }`                       |
+
+`{{locale}}` can be anywhere in the path. A data file with all languages must be JSON or YAML
+(Markdown holds one language per file). Collections without `{{locale}}` or `i18n: true` aren't
+translated and work as before.
+
+```yaml
+collections:
+  - name: posts
+    folder: src/content/posts/{{locale}}
+    fields:
+      - { name: title, required: true }
+      - { name: date, type: date, i18n: false } # the same in every language
+      - { name: cover, type: image, i18n: false }
+      - { name: body, type: richtext }
+```
+
+- The editor shows **a tab per language** with its status. Lists show every entry once, with a dot
+  per language (filled: has content, open: not translated yet).
+- An entry with the same slug in each language folder (or file name) is one entry in the CMS.
+- Opening a language that has no version yet starts it with the shared fields filled in; it's only
+  created once the editor types something.
+- **Shared fields** (`i18n: false`) are marked "Same in all languages". Changing one copies the
+  value to the other languages that exist, so dates, images and prices can't drift apart.
+- Required fields are checked per language when publishing, and the change lists show which
+  language changed. Discarding or deleting an entry applies to all its languages.
 
 ## Drafts and publishing
 

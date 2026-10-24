@@ -9,10 +9,16 @@ const fetchEntries = (siteId: string, collection: string) =>
   unwrap(site.collections[':collection'].entries.$get({ param: { siteId, collection } })).then(
     (r) => r.entries,
   )
-const fetchEntry = (siteId: string, collection: string, slug: string) =>
+/** Language of an entry in a translated collection; undefined uses the site's main language. */
+export type Locale = string | undefined
+
+const q = (locale: Locale) => (locale ? { locale } : {})
+
+const fetchEntry = (siteId: string, collection: string, slug: string, locale?: Locale) =>
   unwrap(
     site.collections[':collection'].entries[':slug'].$get({
       param: { siteId, collection, slug },
+      query: q(locale),
     }),
   )
 const fetchChanges = (siteId: string) =>
@@ -24,6 +30,8 @@ export type FieldDef = CollectionInfo['fields'][number]
 export type EntrySummary = Awaited<ReturnType<typeof fetchEntries>>[number]
 export type Entry = Awaited<ReturnType<typeof fetchEntry>>
 export type EntryStatus = Entry['status']
+export type LocaleState = NonNullable<Entry['locales']>[number]
+export type SiteLocales = NonNullable<SiteContent['i18n']>
 export type Data = Record<string, unknown>
 export type Label = CollectionInfo['label']
 
@@ -39,10 +47,10 @@ export const entriesQuery = (siteId: string, collection: string) =>
     queryFn: () => fetchEntries(siteId, collection),
   })
 
-export const entryQuery = (siteId: string, collection: string, slug: string) =>
+export const entryQuery = (siteId: string, collection: string, slug: string, locale?: Locale) =>
   queryOptions({
-    queryKey: ['sites', siteId, 'entry', collection, slug],
-    queryFn: () => fetchEntry(siteId, collection, slug),
+    queryKey: ['sites', siteId, 'entry', collection, slug, locale ?? null],
+    queryFn: () => fetchEntry(siteId, collection, slug, locale),
     // The form owns the data while editing; don't refetch underneath it.
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 0,
@@ -90,57 +98,90 @@ export function resolveConflict(
   collection: string,
   slug: string,
   keep: 'mine' | 'theirs',
+  locale?: string | null,
 ) {
   return unwrap(
     site.collections[':collection'].entries[':slug'].resolve.$post({
       param: { siteId, collection, slug },
+      query: q(locale ?? undefined),
       json: { keep },
     }),
   )
 }
 
 const revisionsApi = site.collections[':collection'].entries[':slug'].revisions
-const fetchRevisions = (siteId: string, collection: string, slug: string) =>
-  unwrap(revisionsApi.$get({ param: { siteId, collection, slug } }))
-const fetchRevision = (siteId: string, collection: string, slug: string, rev: string) =>
-  unwrap(revisionsApi[':rev'].$get({ param: { siteId, collection, slug, rev } }))
+const fetchRevisions = (siteId: string, collection: string, slug: string, locale?: Locale) =>
+  unwrap(revisionsApi.$get({ param: { siteId, collection, slug }, query: q(locale) }))
+const fetchRevision = (
+  siteId: string,
+  collection: string,
+  slug: string,
+  rev: string,
+  locale?: Locale,
+) =>
+  unwrap(revisionsApi[':rev'].$get({ param: { siteId, collection, slug, rev }, query: q(locale) }))
 
 export type RevisionList = Awaited<ReturnType<typeof fetchRevisions>>
 export type Revision = RevisionList['revisions'][number]
 /** A version of an entry: a commit SHA, or "draft" for the unpublished changes. */
 export type VersionId = string
 
-export const revisionsQuery = (siteId: string, collection: string, slug: string) =>
+export const revisionsQuery = (siteId: string, collection: string, slug: string, locale?: Locale) =>
   queryOptions({
-    queryKey: ['sites', siteId, 'revisions', collection, slug],
-    queryFn: () => fetchRevisions(siteId, collection, slug),
+    queryKey: ['sites', siteId, 'revisions', collection, slug, locale ?? null],
+    queryFn: () => fetchRevisions(siteId, collection, slug, locale),
   })
 
-export const revisionQuery = (siteId: string, collection: string, slug: string, rev: VersionId) =>
+export const revisionQuery = (
+  siteId: string,
+  collection: string,
+  slug: string,
+  rev: VersionId,
+  locale?: Locale,
+) =>
   queryOptions({
-    queryKey: ['sites', siteId, 'revision', collection, slug, rev],
-    queryFn: () => fetchRevision(siteId, collection, slug, rev),
+    queryKey: ['sites', siteId, 'revision', collection, slug, rev, locale ?? null],
+    queryFn: () => fetchRevision(siteId, collection, slug, rev, locale),
     // A commit never changes; only the draft does.
     staleTime: rev === 'draft' ? 0 : Number.POSITIVE_INFINITY,
   })
 
-export function restoreRevision(siteId: string, collection: string, slug: string, rev: string) {
-  return unwrap(revisionsApi[':rev'].restore.$post({ param: { siteId, collection, slug, rev } }))
+export function restoreRevision(
+  siteId: string,
+  collection: string,
+  slug: string,
+  rev: string,
+  locale?: Locale,
+) {
+  return unwrap(
+    revisionsApi[':rev'].restore.$post({
+      param: { siteId, collection, slug, rev },
+      query: q(locale),
+    }),
+  )
 }
 
-export function saveEntry(siteId: string, collection: string, slug: string, data: Data) {
+export function saveEntry(
+  siteId: string,
+  collection: string,
+  slug: string,
+  data: Data,
+  locale?: Locale,
+) {
   return unwrap(
     site.collections[':collection'].entries[':slug'].$put({
       param: { siteId, collection, slug },
+      query: q(locale),
       json: { data },
     }),
   )
 }
 
-export function createEntry(siteId: string, collection: string, data: Data) {
+export function createEntry(siteId: string, collection: string, data: Data, locale?: Locale) {
   return unwrap(
     site.collections[':collection'].entries.$post({
       param: { siteId, collection },
+      query: q(locale),
       json: { data },
     }),
   )
@@ -172,7 +213,6 @@ export function humanize(name: string) {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-/** Where to load a stored image path from for a preview, or null if it can't be shown. */
 /**
  * URL to show an image or file used in content. Paths on the site go through
  * the CMS, which serves unpublished uploads and repo files (and otherwise

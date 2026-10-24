@@ -4,7 +4,7 @@ import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { createMiddleware } from 'hono/factory'
 import { z } from 'zod'
-import type { Collection } from '../content/config'
+import { type Collection, siteLocales } from '../content/config'
 import { MEDIA_COLLECTION, MediaService } from '../content/media'
 import { PublishService } from '../content/publish'
 import { ContentError, ContentService } from '../content/service'
@@ -25,6 +25,8 @@ type SiteState = 'ok' | 'not_linked' | 'github_not_configured'
 const Data = z.object({ data: z.record(z.string(), z.unknown()) })
 const CollectionParam = z.object({ collection: z.string().max(64) })
 const EntryParam = z.object({ collection: z.string().max(64), slug: z.string().max(130) })
+/** Language of the entry to work on; translated collections default to the main language. */
+const LocaleQuery = z.object({ locale: z.string().max(20).optional() })
 const limit = bodyLimit({ maxSize: 2 * 1024 * 1024 })
 // Uploads are checked against the site's own limit after parsing; this caps the request.
 const mediaLimit = bodyLimit({ maxSize: 51 * 1024 * 1024 })
@@ -88,6 +90,7 @@ function clientCollection(c: Collection) {
     description: c.description ?? null,
     kind: c.folder ? ('folder' as const) : ('file' as const),
     format: c.format,
+    translated: !!c.translation,
     summary: c.summary ?? null,
     sortBy: c.sortBy ?? null,
     sortOrder: c.sortOrder,
@@ -105,7 +108,7 @@ export const contentRoutes = new Hono<ContentEnv>()
     handle(c, async () => {
       const content = c.var.content
       if (!content) {
-        return { status: c.var.siteState, collections: [], issues: null, changes: 0 }
+        return { status: c.var.siteState, collections: [], issues: null, changes: 0, i18n: null }
       }
       const state = await content.configState()
       if (state.status !== 'ok') {
@@ -114,12 +117,13 @@ export const contentRoutes = new Hono<ContentEnv>()
           state.status === 'invalid_config' && c.var.user.role === 'superadmin'
             ? state.issues
             : null
-        return { status: state.status, collections: [], issues, changes: 0 }
+        return { status: state.status, collections: [], issues, changes: 0, i18n: null }
       }
       return {
         status: 'ok' as const,
         collections: state.config.collections.map(clientCollection),
         issues: null,
+        i18n: siteLocales(state.config),
         changes: content.drafts().length + new MediaService(content).staged().length,
       }
     }),
@@ -237,6 +241,7 @@ export const contentRoutes = new Hono<ContentEnv>()
     '/collections/:collection/entries',
     limit,
     validate('param', CollectionParam),
+    validate('query', LocaleQuery),
     validate('json', Data),
     (c) =>
       handle(c, async () => {
@@ -245,6 +250,7 @@ export const contentRoutes = new Hono<ContentEnv>()
           collection,
           c.req.valid('json').data,
           c.var.user.id,
+          c.req.valid('query').locale,
         )
         audit(c.var.deps.db, {
           actorId: c.var.user.id,
@@ -257,16 +263,21 @@ export const contentRoutes = new Hono<ContentEnv>()
         return res
       }),
   )
-  .get('/collections/:collection/entries/:slug', validate('param', EntryParam), (c) =>
-    handle(c, async () => {
-      const { collection, slug } = c.req.valid('param')
-      return requireContent(c).readEntry(collection, slug)
-    }),
+  .get(
+    '/collections/:collection/entries/:slug',
+    validate('param', EntryParam),
+    validate('query', LocaleQuery),
+    (c) =>
+      handle(c, async () => {
+        const { collection, slug } = c.req.valid('param')
+        return requireContent(c).readEntry(collection, slug, c.req.valid('query').locale)
+      }),
   )
   .put(
     '/collections/:collection/entries/:slug',
     limit,
     validate('param', EntryParam),
+    validate('query', LocaleQuery),
     validate('json', Data),
     (c) =>
       handle(c, async () => {
@@ -276,6 +287,7 @@ export const contentRoutes = new Hono<ContentEnv>()
           slug,
           c.req.valid('json').data,
           c.var.user.id,
+          c.req.valid('query').locale,
         )
       }),
   )
@@ -301,28 +313,40 @@ export const contentRoutes = new Hono<ContentEnv>()
     }),
   )
   // --- Revisions ---------------------------------------------------------------
-  .get('/collections/:collection/entries/:slug/revisions', validate('param', EntryParam), (c) =>
-    handle(c, async () => {
-      const { collection, slug } = c.req.valid('param')
-      return requireContent(c).revisions(collection, slug)
-    }),
+  .get(
+    '/collections/:collection/entries/:slug/revisions',
+    validate('param', EntryParam),
+    validate('query', LocaleQuery),
+    (c) =>
+      handle(c, async () => {
+        const { collection, slug } = c.req.valid('param')
+        return requireContent(c).revisions(collection, slug, c.req.valid('query').locale)
+      }),
   )
   .get(
     '/collections/:collection/entries/:slug/revisions/:rev',
     validate('param', RevisionParam),
+    validate('query', LocaleQuery),
     (c) =>
       handle(c, async () => {
         const { collection, slug, rev } = c.req.valid('param')
-        return requireContent(c).readRevision(collection, slug, rev)
+        return requireContent(c).readRevision(collection, slug, rev, c.req.valid('query').locale)
       }),
   )
   .post(
     '/collections/:collection/entries/:slug/revisions/:rev/restore',
     validate('param', RestoreParam),
+    validate('query', LocaleQuery),
     (c) =>
       handle(c, async () => {
         const { collection, slug, rev } = c.req.valid('param')
-        const res = await requireContent(c).restoreRevision(collection, slug, rev, c.var.user.id)
+        const res = await requireContent(c).restoreRevision(
+          collection,
+          slug,
+          rev,
+          c.var.user.id,
+          c.req.valid('query').locale,
+        )
         audit(c.var.deps.db, {
           actorId: c.var.user.id,
           action: 'content.restored',
@@ -337,6 +361,7 @@ export const contentRoutes = new Hono<ContentEnv>()
   .post(
     '/collections/:collection/entries/:slug/resolve',
     validate('param', EntryParam),
+    validate('query', LocaleQuery),
     validate('json', ResolveBody),
     (c) =>
       handle(c, async () => {
@@ -345,6 +370,7 @@ export const contentRoutes = new Hono<ContentEnv>()
           collection,
           slug,
           c.req.valid('json').keep,
+          c.req.valid('query').locale,
         )
       }),
   )

@@ -3,11 +3,11 @@ import type { Db } from '../db'
 import { type Draft, drafts, users } from '../db/schema'
 import { gitBlobSha } from '../github/sha'
 import type { LinkedSite, SiteSync } from '../github/sync'
-import { type Collection, type Config, type ConfigIssue, parseConfig } from './config'
+import { type Collection, type Config, type ConfigIssue, parseConfig, siteLocales } from './config'
 import { checkFields, entryTitle, type FieldIssue } from './fields'
 import { type Data, parseDocument, serializeDocument } from './format'
 import { findSiteIcon, iconType, MAX_ICON_BYTES } from './icon'
-import { entryPathFor, renderSlug, SINGLETON_SLUG, slugForPath } from './paths'
+import { entryForPath, entryPathFor, renderSlug, SINGLETON_SLUG } from './paths'
 
 export const CONFIG_PATHS = ['.drikus/config.yml', '.drikus/config.yaml', '.drikus/config.json']
 
@@ -38,8 +38,22 @@ export class ContentError extends Error {
 }
 
 export type PublishProblem =
-  | { kind: 'required'; collection: string; slug: string; title: string | null; fields: string[] }
-  | { kind: 'conflict' | 'config'; collection: string; slug: string; title: string | null }
+  | {
+      kind: 'required'
+      collection: string
+      slug: string
+      title: string | null
+      /** The language whose fields are missing, for translated collections. */
+      locale: string | null
+      fields: string[]
+    }
+  | {
+      kind: 'conflict' | 'config'
+      collection: string
+      slug: string
+      title: string | null
+      locale: string | null
+    }
 
 export type ConfigState =
   | { status: 'ok'; config: Config; path: string }
@@ -192,71 +206,147 @@ export class ContentService {
     }
   }
 
-  async #resolve(collection: Collection, slug: string) {
-    const path = entryPathFor(collection, slug, new Set((await this.files()).keys()))
+  /**
+   * The language to work in: null for untranslated collections, otherwise the
+   * requested language (which must be one of the site's) or the main language.
+   */
+  async #locale(collection: Collection, requested?: string | null): Promise<string | null> {
+    if (!collection.translation) return null
+    const site = siteLocales(await this.config())
+    if (!site) throw new ContentError('not_found', 404)
+    if (!requested) return site.main
+    if (!site.locales.includes(requested)) throw new ContentError('not_found', 404)
+    return requested
+  }
+
+  /** The languages an entry has files for: every site language, or [null] if untranslated. */
+  async #fileLocales(collection: Collection): Promise<(string | null)[]> {
+    if (collection.translation !== 'files' && collection.translation !== 'suffix') return [null]
+    return siteLocales(await this.config())?.locales ?? [null]
+  }
+
+  async #resolve(collection: Collection, slug: string, locale: string | null = null) {
+    const path = entryPathFor(collection, slug, new Set((await this.files()).keys()), locale)
     if (!path) throw new ContentError('not_found', 404)
     return path
+  }
+
+  /** One file of an entry: its published version, its draft, and the data as edited. */
+  async #doc(collection: Collection, slug: string, locale: string | null): Promise<Doc> {
+    const path = await this.#resolve(collection, slug, locale)
+    const draft = this.#draft(path)
+    const published = await this.#published(collection, path)
+    const data =
+      draft?.action === 'upsert' ? (draft.data ?? {}) : draft ? null : (published?.data ?? null)
+    return { locale, path, draft, published, data }
+  }
+
+  /** All files of an entry: one per language for per-language files, otherwise one. */
+  async #docs(collection: Collection, slug: string, locale: string | null) {
+    const locales = await this.#fileLocales(collection)
+    return Promise.all(
+      locales.map((l) =>
+        this.#doc(collection, slug, l ?? (collection.translation ? locale : null)),
+      ),
+    )
+  }
+
+  #editor(draft: Draft | undefined) {
+    return draft?.updatedBy
+      ? (this.db
+          .select({ id: users.id, name: users.name })
+          .from(users)
+          .where(eq(users.id, draft.updatedBy))
+          .get() ?? null)
+      : null
   }
 
   async listEntries(name: string) {
     const collection = await this.collection(name)
     if (!collection.folder) throw new ContentError('not_found', 404)
     const files = await this.files()
-    const draftByPath = new Map(this.drafts(name).map((d) => [d.path, d]))
+    const locales = siteLocales(await this.config())?.locales ?? []
+    const main = locales[0] ?? null
 
-    const published = [...files.entries()]
-      .map(([path, sha]) => ({ path, sha, slug: slugForPath(collection, path) }))
-      .filter((f): f is { path: string; sha: string; slug: string } => f.slug !== null)
-
-    const entries = await mapLimit(published, async (f) => {
-      const draft = draftByPath.get(f.path)
-      draftByPath.delete(f.path)
-      let data: Data | null = null
-      let invalid = false
-      if (draft?.action === 'upsert') data = draft.data ?? {}
-      else {
-        try {
-          data = parseDocument(collection.format, await this.#text(f.sha))
-        } catch {
-          invalid = true
-        }
+    // Group files and drafts by slug, then by language (null when untranslated).
+    const bySlug = new Map<
+      string,
+      Map<string | null, { path: string; sha?: string; draft?: Draft }>
+    >()
+    const slot = (slug: string, locale: string | null, path: string) => {
+      let docs = bySlug.get(slug)
+      if (!docs) {
+        docs = new Map()
+        bySlug.set(slug, docs)
       }
-      const status: EntryStatus = !draft
+      let doc = docs.get(locale)
+      if (!doc) {
+        doc = { path }
+        docs.set(locale, doc)
+      }
+      return doc
+    }
+    for (const [path, sha] of files) {
+      const entry = entryForPath(collection, path, locales)
+      if (entry) slot(entry.slug, entry.locale, path).sha = sha
+    }
+    for (const draft of this.drafts(name)) slot(draft.slug, draft.locale, draft.path).draft = draft
+
+    const entries = await mapLimit([...bySlug.entries()], async ([slug, docs]) => {
+      const states = await Promise.all(
+        [...docs.entries()].map(async ([locale, d]) => {
+          let data: Data | null = null
+          let invalid = false
+          if (d.draft?.action === 'upsert') data = d.draft.data ?? {}
+          else if (d.sha && !d.draft) {
+            try {
+              data = parseDocument(collection.format, await this.#text(d.sha))
+            } catch {
+              invalid = true
+            }
+          }
+          const status: EntryStatus = !d.draft
+            ? 'published'
+            : d.draft.action === 'delete'
+              ? 'deleted'
+              : d.sha
+                ? 'modified'
+                : 'new'
+          return { locale, data, invalid, status, updatedAt: d.draft?.updatedAt.getTime() ?? null }
+        }),
+      )
+      // Only deletions of files that don't exist leave nothing to show.
+      const shown = states.filter((s) => s.data || s.invalid || s.status === 'deleted')
+      if (!shown.length) return null
+      const lead =
+        shown.find((s) => s.locale === main && s.data) ?? shown.find((s) => s.data) ?? shown[0]
+      const statuses = shown.map((s) => s.status)
+      const status: EntryStatus = statuses.every((s) => s === 'published')
         ? 'published'
-        : draft.action === 'delete'
+        : statuses.every((s) => s === 'deleted')
           ? 'deleted'
-          : 'modified'
-      return { slug: f.slug, data, status, invalid, draft } as {
-        slug: string
-        data: Data | null
-        status: EntryStatus
-        invalid: boolean
-        draft: Draft | undefined
+          : statuses.every((s) => s === 'new')
+            ? 'new'
+            : 'modified'
+      return {
+        slug,
+        title: lead?.data ? entryTitle(collection.fields, lead.data, collection.summary) : null,
+        status,
+        invalid: !!lead?.invalid,
+        updatedAt: Math.max(0, ...shown.map((s) => s.updatedAt ?? 0)) || null,
+        locales: collection.translation
+          ? locales.map((code) => ({
+              code,
+              status: (shown.find((s) => s.locale === code)?.status ?? 'missing') as LocaleStatus,
+            }))
+          : null,
+        sortValue: collection.sortBy && lead?.data ? lead.data[collection.sortBy] : undefined,
+        values: listedValues(collection, lead?.data ?? null),
       }
     })
-    // Drafts for files that don't exist yet are new entries.
-    for (const draft of draftByPath.values()) {
-      if (draft.action === 'upsert') {
-        entries.push({
-          slug: draft.slug,
-          data: draft.data ?? {},
-          status: 'new',
-          invalid: false,
-          draft,
-        })
-      }
-    }
 
+    const list = entries.filter((e) => e !== null)
     const sortKey = collection.sortBy
-    const list = entries.map((e) => ({
-      slug: e.slug,
-      title: e.data ? entryTitle(collection.fields, e.data, collection.summary) : null,
-      status: e.status,
-      invalid: e.invalid,
-      updatedAt: e.draft?.updatedAt.getTime() ?? null,
-      sortValue: sortKey && e.data ? e.data[sortKey] : undefined,
-      values: listedValues(collection, e.data),
-    }))
     const dir = collection.sortOrder === 'desc' ? -1 : 1
     list.sort((a, b) => {
       if (sortKey) {
@@ -273,35 +363,74 @@ export class ContentService {
     return list.map(({ sortValue: _, ...rest }) => rest)
   }
 
-  async readEntry(name: string, slug: string) {
-    const collection = await this.collection(name)
-    const path = await this.#resolve(collection, slug)
-    const draft = this.#draft(path)
-    const published = await this.#published(collection, path)
-    if (!published && !draft && !collection.file) throw new ContentError('not_found', 404)
+  /** Status of one language section in a data file with all languages. */
+  #sectionStatus(doc: Doc, locale: string): LocaleStatus {
+    const live = doc.published?.data[locale]
+    if (!doc.draft) return live ? 'published' : 'missing'
+    if (doc.draft.action === 'delete') return 'deleted'
+    const edited = doc.draft.data?.[locale]
+    if (!edited) return 'missing'
+    if (!live) return 'new'
+    return JSON.stringify(edited) === JSON.stringify(live) ? 'published' : 'modified'
+  }
 
-    const data = draft?.action === 'upsert' ? (draft.data ?? {}) : (published?.data ?? {})
-    const status: EntryStatus = !draft
-      ? 'published'
-      : draft.action === 'delete'
-        ? 'deleted'
-        : published
-          ? 'modified'
-          : 'new'
-    const editor = draft?.updatedBy
-      ? this.db
-          .select({ id: users.id, name: users.name })
-          .from(users)
-          .where(eq(users.id, draft.updatedBy))
-          .get()
-      : undefined
+  async readEntry(name: string, slug: string, requested?: string | null) {
+    const collection = await this.collection(name)
+    const locale = await this.#locale(collection, requested)
+    const shared = sharedFields(collection)
+    const locales = siteLocales(await this.config())?.locales ?? []
+
+    let doc: Doc
+    let data: Data
+    let status: LocaleStatus
+    let localeStatuses: { code: string; status: LocaleStatus }[] | null = null
+
+    if (collection.translation === 'sections') {
+      doc = await this.#doc(collection, slug, locale)
+      if (!doc.published && !doc.draft && !collection.file) throw new ContentError('not_found', 404)
+      data = asObject(doc.data?.[locale as string])
+      status = this.#sectionStatus(doc, locale as string)
+      localeStatuses = locales.map((code) => ({ code, status: this.#sectionStatus(doc, code) }))
+      if (status === 'missing') data = pick(sharedSource(doc.data, locales), shared)
+    } else {
+      const docs = await this.#docs(collection, slug, locale)
+      doc = docs.find((d) => d.locale === locale) ?? (docs[0] as Doc)
+      const exists = docs.some((d) => d.published || d.draft)
+      if (!exists && !collection.file) throw new ContentError('not_found', 404)
+      const statusOf = (d: Doc): LocaleStatus =>
+        !d.draft
+          ? d.published || !collection.translation
+            ? 'published'
+            : 'missing'
+          : d.draft.action === 'delete'
+            ? 'deleted'
+            : d.published
+              ? 'modified'
+              : 'new'
+      status = statusOf(doc)
+      data = doc.data ?? {}
+      if (collection.translation) {
+        localeStatuses = docs.map((d) => ({ code: d.locale as string, status: statusOf(d) }))
+        // A translation that doesn't exist yet starts with the shared fields filled in.
+        if (status === 'missing') {
+          const source =
+            docs.find((d) => d.locale === locales[0] && d.data) ?? docs.find((d) => d.data)
+          data = pick(source?.data ?? {}, shared)
+        }
+      }
+    }
+
     return {
       collection: collection.name,
       slug,
+      locale,
+      locales: localeStatuses,
       data,
       status,
-      published: !!published,
-      draft: draft ? { updatedAt: draft.updatedAt.getTime(), updatedBy: editor ?? null } : null,
+      published: !!doc.published,
+      draft: doc.draft
+        ? { updatedAt: doc.draft.updatedAt.getTime(), updatedBy: this.#editor(doc.draft) }
+        : null,
       issues: checkFields(collection.fields, data),
     }
   }
@@ -332,6 +461,7 @@ export class ContentService {
           data: row.data,
           content: row.content,
           baseSha: row.baseSha,
+          locale: row.locale,
           updatedBy: row.updatedBy,
           updatedAt: now,
         },
@@ -346,58 +476,107 @@ export class ContentService {
       .run()
   }
 
-  async saveDraft(name: string, slug: string, data: Data, userId: string) {
-    const collection = await this.collection(name)
-    const path = await this.#resolve(collection, slug)
-    const draft = this.#draft(path)
-    const published = await this.#published(collection, path)
-    if (!published && !draft && !collection.file) throw new ContentError('not_found', 404)
-
-    const issues = this.#validate(collection, data)
-    const merged = this.#merge(collection, published?.data ?? {}, data)
-    const content = serializeDocument(collection.format, merged)
-
-    // Saving the published content again simply means "no changes".
-    if (published && content === (await this.#text(published.sha))) {
-      this.#deleteDraft(path)
-      return { status: 'published' as EntryStatus, issues }
+  /** Stores new data for one file as a draft, or drops the draft when it matches GitHub again. */
+  async #write(
+    collection: Collection,
+    slug: string,
+    doc: Doc,
+    data: Data,
+    userId: string,
+  ): Promise<EntryStatus> {
+    const content = serializeDocument(collection.format, data)
+    if (doc.published && content === (await this.#text(doc.published.sha))) {
+      this.#deleteDraft(doc.path)
+      return 'published'
     }
     this.#upsertDraft({
       siteId: this.site.id,
-      path,
-      collection: name,
+      path: doc.path,
+      collection: collection.name,
       slug,
+      locale: collection.translation === 'sections' ? null : doc.locale,
       action: 'upsert',
-      data: merged,
+      data,
       content,
-      baseSha: draft ? draft.baseSha : (published?.sha ?? null),
+      baseSha: doc.draft ? doc.draft.baseSha : (doc.published?.sha ?? null),
       updatedBy: userId,
     })
-    return { status: (published ? 'modified' : 'new') as EntryStatus, issues }
+    return doc.published ? 'modified' : 'new'
   }
 
-  async createEntry(name: string, data: Data, userId: string) {
+  async saveDraft(
+    name: string,
+    slug: string,
+    data: Data,
+    userId: string,
+    requested?: string | null,
+  ) {
+    const collection = await this.collection(name)
+    const locale = await this.#locale(collection, requested)
+    const shared = sharedFields(collection)
+    const issues = this.#validate(collection, data)
+
+    if (collection.translation === 'sections') {
+      const doc = await this.#doc(collection, slug, locale)
+      if (!doc.published && !doc.draft && !collection.file) throw new ContentError('not_found', 404)
+      const base = doc.data ?? {}
+      const section = this.#merge(collection, asObject(base[locale as string]), data)
+      const full: Data = { ...base, [locale as string]: section }
+      // Shared fields are the same in every language section that exists.
+      for (const other of siteLocales(await this.config())?.locales ?? []) {
+        if (other !== locale && full[other] && typeof full[other] === 'object') {
+          full[other] = { ...asObject(full[other]), ...pick(section, shared) }
+        }
+      }
+      return { status: await this.#write(collection, slug, doc, full, userId), issues }
+    }
+
+    const docs = await this.#docs(collection, slug, locale)
+    const doc = docs.find((d) => d.locale === locale) ?? (docs[0] as Doc)
+    if (!docs.some((d) => d.published || d.draft) && !collection.file) {
+      throw new ContentError('not_found', 404)
+    }
+    const merged = this.#merge(collection, doc.published?.data ?? {}, data)
+    const status = await this.#write(collection, slug, doc, merged, userId)
+
+    // Keep shared fields identical in the other languages' files.
+    if (shared.length) {
+      const values = pick(merged, shared)
+      for (const other of docs) {
+        if (other === doc || !other.data) continue
+        if (shared.every((n) => JSON.stringify(other.data?.[n]) === JSON.stringify(values[n])))
+          continue
+        await this.#write(collection, slug, other, { ...other.data, ...values }, userId)
+      }
+    }
+    return { status, issues }
+  }
+
+  async createEntry(name: string, data: Data, userId: string, requested?: string | null) {
     const collection = await this.collection(name)
     if (!collection.folder || !collection.create) throw new ContentError('cannot_create', 400)
+    const locale = await this.#locale(collection, requested)
     this.#validate(collection, data)
 
     const base = renderSlug(collection.slug, data)
     if (!base) throw new ContentError('slug_required', 400)
     const files = await this.files()
-    // Compare slugs, not paths: "x.yml" and a new "x.yaml" would be the same entry.
+    const locales = siteLocales(await this.config())?.locales ?? []
+    // Compare slugs, not paths: "x.yml" and a new "x.yaml" (or another language) are the same entry.
     const taken = new Set([
-      ...[...files.keys()].map((p) => slugForPath(collection, p)).filter((s) => s !== null),
+      ...[...files.keys()].map((p) => entryForPath(collection, p, locales)?.slug).filter(Boolean),
       ...this.drafts(name).map((d) => d.slug),
     ])
     let slug = base
     for (let n = 2; taken.has(slug); n++) slug = `${base.slice(0, 110)}-${n}`
-    const path = entryPathFor(collection, slug, new Set()) as string
+    const path = entryPathFor(collection, slug, new Set(), locale) as string
     const merged = this.#merge(collection, {}, data)
     this.#upsertDraft({
       siteId: this.site.id,
       path,
       collection: name,
       slug,
+      locale,
       action: 'upsert',
       data: merged,
       content: serializeDocument(collection.format, merged),
@@ -407,52 +586,52 @@ export class ContentService {
     return { slug }
   }
 
+  /** Deletes an entry in every language. */
   async deleteEntry(name: string, slug: string, userId: string) {
     const collection = await this.collection(name)
     if (!collection.folder || !collection.delete) throw new ContentError('cannot_delete', 400)
-    const path = await this.#resolve(collection, slug)
-    const publishedSha = (await this.files()).get(path)
-    const draft = this.#draft(path)
-    if (!publishedSha) {
-      if (!draft) throw new ContentError('not_found', 404)
-      this.#deleteDraft(path)
-      return { status: 'removed' as const }
+    const docs = await this.#docs(collection, slug, await this.#locale(collection))
+    if (!docs.some((d) => d.published || d.draft)) throw new ContentError('not_found', 404)
+    let deleted = false
+    for (const doc of docs) {
+      if (doc.published) {
+        deleted = true
+        this.#upsertDraft({
+          siteId: this.site.id,
+          path: doc.path,
+          collection: name,
+          slug,
+          locale: doc.locale,
+          action: 'delete',
+          data: null,
+          content: null,
+          baseSha: doc.draft ? doc.draft.baseSha : doc.published.sha,
+          updatedBy: userId,
+        })
+      } else if (doc.draft) {
+        this.#deleteDraft(doc.path)
+      }
     }
-    this.#upsertDraft({
-      siteId: this.site.id,
-      path,
-      collection: name,
-      slug,
-      action: 'delete',
-      data: null,
-      content: null,
-      baseSha: draft ? draft.baseSha : publishedSha,
-      updatedBy: userId,
-    })
-    return { status: 'deleted' as const }
+    return { status: deleted ? ('deleted' as const) : ('removed' as const) }
   }
 
+  /** Throws away the entry's unpublished changes, in every language. */
   async discard(name: string, slug: string) {
     const collection = await this.collection(name)
-    const path = await this.#resolve(collection, slug)
-    this.#deleteDraft(path)
+    for (const doc of await this.#docs(collection, slug, await this.#locale(collection))) {
+      this.#deleteDraft(doc.path)
+    }
     return { ok: true as const }
   }
 
   /** Earlier versions of an entry: the commits that changed its file, newest first. */
-  async revisions(name: string, slug: string) {
+  async revisions(name: string, slug: string, requested?: string | null) {
     const collection = await this.collection(name)
-    const path = await this.#resolve(collection, slug)
+    const locale = await this.#locale(collection, requested)
+    const path = await this.#resolve(collection, slug, locale)
     const commits = await this.sync.history(this.site, path)
     const draft = this.#draft(path)
     if (!commits.length && !draft) throw new ContentError('not_found', 404)
-    const editor = draft?.updatedBy
-      ? this.db
-          .select({ id: users.id, name: users.name })
-          .from(users)
-          .where(eq(users.id, draft.updatedBy))
-          .get()
-      : undefined
     return {
       // The newest commit holds what's live, unless the file was deleted since.
       live: (await this.files()).has(path),
@@ -460,7 +639,7 @@ export class ContentService {
         ? {
             action: draft.action,
             updatedAt: draft.updatedAt.getTime(),
-            updatedBy: editor ?? null,
+            updatedBy: this.#editor(draft),
           }
         : null,
       revisions: commits.map((c) => ({
@@ -473,8 +652,8 @@ export class ContentService {
   }
 
   /** The entry's file in one of its revisions, or null if it was deleted there. */
-  async #revisionFile(collection: Collection, slug: string, sha: string) {
-    const path = await this.#resolve(collection, slug)
+  async #revisionFile(collection: Collection, slug: string, sha: string, locale: string | null) {
+    const path = await this.#resolve(collection, slug, locale)
     // Only commits from the entry's own history: no peeking at arbitrary refs.
     const commits = await this.sync.history(this.site, path)
     if (!commits.some((c) => c.sha === sha)) throw new ContentError('not_found', 404)
@@ -491,23 +670,40 @@ export class ContentService {
   }
 
   /** The data of one version: a commit SHA, or `draft` for the unpublished changes. */
-  async readRevision(name: string, slug: string, rev: string): Promise<{ data: Data | null }> {
+  async readRevision(
+    name: string,
+    slug: string,
+    rev: string,
+    requested?: string | null,
+  ): Promise<{ data: Data | null }> {
     const collection = await this.collection(name)
+    const locale = await this.#locale(collection, requested)
+    // In a data file with all languages, a version of one language is its section.
+    const section = (data: Data | null) =>
+      data && collection.translation === 'sections' ? asObject(data[locale as string]) : data
     if (rev === 'draft') {
-      const draft = this.#draft(await this.#resolve(collection, slug))
+      const draft = this.#draft(await this.#resolve(collection, slug, locale))
       if (!draft) throw new ContentError('not_found', 404)
-      return { data: draft.action === 'upsert' ? (draft.data ?? {}) : null }
+      return { data: section(draft.action === 'upsert' ? (draft.data ?? {}) : null) }
     }
-    return { data: (await this.#revisionFile(collection, slug, rev)).data }
+    return { data: section((await this.#revisionFile(collection, slug, rev, locale)).data) }
   }
 
   /**
    * Brings back an earlier version as a draft, byte for byte, so it goes live
-   * with the next publish like any other change.
+   * with the next publish like any other change. For a data file with all
+   * languages, that restores every language.
    */
-  async restoreRevision(name: string, slug: string, sha: string, userId: string) {
+  async restoreRevision(
+    name: string,
+    slug: string,
+    sha: string,
+    userId: string,
+    requested?: string | null,
+  ) {
     const collection = await this.collection(name)
-    const { path, text, data } = await this.#revisionFile(collection, slug, sha)
+    const locale = await this.#locale(collection, requested)
+    const { path, text, data } = await this.#revisionFile(collection, slug, sha, locale)
     if (text === null || data === null) throw new ContentError('not_found', 404)
     const publishedSha = (await this.files()).get(path) ?? null
     if (publishedSha === gitBlobSha(text)) {
@@ -520,6 +716,7 @@ export class ContentService {
       path,
       collection: name,
       slug,
+      locale: collection.translation === 'sections' ? null : locale,
       action: 'upsert',
       data,
       content: text,
@@ -541,6 +738,7 @@ export class ContentService {
       .map(({ draft, editor }) => ({
         collection: draft.collection,
         slug: draft.slug,
+        locale: draft.locale,
         action: draft.action,
         status: (draft.action === 'delete'
           ? 'deleted'
@@ -552,6 +750,39 @@ export class ContentService {
         updatedBy: editor?.id ? editor : null,
       }))
   }
+}
+
+interface Doc {
+  locale: string | null
+  path: string
+  draft: Draft | undefined
+  published: { sha: string; data: Data } | null
+  /** The data as edited: the draft, else the published file; null if absent or being deleted. */
+  data: Data | null
+}
+
+/** A language that has no file (or section) yet shows as missing. */
+export type LocaleStatus = EntryStatus | 'missing'
+
+function asObject(value: unknown): Data {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Data) : {}
+}
+
+function pick(data: Data, names: string[]): Data {
+  return Object.fromEntries(names.filter((n) => n in data).map((n) => [n, data[n]]))
+}
+
+/** Names of fields that are the same in every language. */
+export function sharedFields(collection: Collection): string[] {
+  return collection.translation
+    ? collection.fields.filter((f) => f.i18n === false).map((f) => f.name)
+    : []
+}
+
+/** In a data file with all languages: the section to copy shared fields from. */
+function sharedSource(full: Data | null, locales: string[]): Data {
+  for (const l of locales) if (full?.[l] && typeof full[l] === 'object') return full[l] as Data
+  return {}
 }
 
 export { SINGLETON_SLUG }
