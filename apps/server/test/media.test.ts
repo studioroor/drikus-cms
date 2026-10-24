@@ -288,6 +288,15 @@ describe('media API', () => {
     }
   })
 
+  test('sends images that are not in the repo to the live site, cacheably', async () => {
+    const w = await world()
+    await w.admin.patch(`/api/admin/sites/${w.siteId}`, { siteUrl: 'https://bakkerij.nl/' })
+    const res = await w.file('/images/winkel.jpg', '&w=800')
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe('https://bakkerij.nl/images/winkel.jpg')
+    expect(res.headers.get('cache-control')).toContain('max-age=3600')
+  })
+
   test('editors cannot upload to or read media of other sites', async () => {
     const w = await world()
     expect((await w.upload(await photo(), 'x.png', w.otherSite)).status).toBe(404)

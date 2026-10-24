@@ -214,6 +214,8 @@ export const contentRoutes = new Hono<ContentEnv>()
       if (!file) {
         // Not a repo file (e.g. an image hosted elsewhere): let the live site serve it.
         if (content.site.siteUrl && src.startsWith('/') && !src.startsWith('//')) {
+          // Cacheable too, or every page view would ask the CMS again before the live site.
+          c.header('cache-control', CACHE_BRIEFLY)
           return c.redirect(`${content.site.siteUrl.replace(/\/$/, '')}${src}`, 302)
         }
         return c.json({ error: 'not_found' as const }, 404)
