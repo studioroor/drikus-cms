@@ -1,6 +1,20 @@
 # List and media editing: design
 
-Date: 2026-10-24 · Status: draft for review
+Date: 2026-10-24 · Status: approved
+
+> **Update after phase 5 (#8) merged.** Phase 5 already delivers most of sections 5 and 6:
+> `MediaService` (`apps/server/src/content/media.ts`) lists repo images in the media folder plus
+> staged uploads, maps content paths to repo paths (`pathForSrc`), and serves previews and
+> thumbnails (160/400/800) at `GET /media/file?src=…&w=…`; the web app has `MediaField` (preview,
+> upload/replace, choose from library, remove, edit path), `MediaPicker` (library with upload,
+> search, delete of unpublished uploads), `DropZone`, and `previewUrl(src, siteId, w)`; the
+> rich-text image button already opens the library. `media.publicPath` can be set explicitly, so
+> hond-morvan works with `media: { folder: src/assets/images, publicPath: /images }`.
+> Where this design differs (`/media/raw`, a separate `ImagePicker` with three tabs, `/data`
+> thumbnail files, an `UPLOADS_AVAILABLE` switch) phase 5's implementation wins. What remains
+> from sections 4–6: the photo grid for image lists, multi-select in `MediaPicker`, multi-file
+> drop, thumbnails in list rows, the "Not used yet" filter, "already added" dimming, and the
+> incomplete-listing notice for truncated trees.
 
 ## Why
 
