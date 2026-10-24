@@ -6,9 +6,9 @@
     "./app": "./src/app.ts"
   },
   "scripts": {
-    "dev": "PUBLIC_URL=http://localhost:5173 bun --watch src/index.ts",
-    "start": "bun src/index.ts",
-    "cli": "bun src/cli.ts",
+    "dev": "PUBLIC_URL=http://localhost:5173 bun --env-file=../../.env --watch src/index.ts",
+    "start": "bun --env-file=../../.env src/index.ts",
+    "cli": "bun --env-file=../../.env src/cli.ts",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc -p ."
   },
