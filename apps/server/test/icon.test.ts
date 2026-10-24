@@ -61,6 +61,9 @@ describe('site icon API', () => {
     const res = await w.get(w.path)
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('image/svg+xml')
+    expect(res.headers.get('content-disposition')).toBe('attachment')
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(res.headers.get('content-security-policy')).toContain("script-src 'self'")
     expect(await res.text()).toBe(SVG)
 
     const again = await w.get(w.path, { 'if-none-match': res.headers.get('etag') as string })

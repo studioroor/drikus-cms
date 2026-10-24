@@ -130,6 +130,9 @@ export const contentRoutes = new Hono<ContentEnv>()
       if (c.req.header('if-none-match') === etag) return c.body(null, 304)
       const bytes = await content.sync.blob(content.site, icon.sha)
       c.header('content-type', icon.type)
+      // Repo files are untrusted: <img> still renders them, but opening the URL
+      // downloads instead of running an SVG's scripts on the CMS origin.
+      c.header('content-disposition', 'attachment')
       return c.body(new Uint8Array(bytes))
     } catch (err) {
       if (err instanceof GitHubError) return c.json({ error: githubFailure(err).error }, 502)
