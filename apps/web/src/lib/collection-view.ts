@@ -66,3 +66,25 @@ export function paginate<T>(
     to: start + items.length,
   }
 }
+
+/** Parses a stored date or datetime; a date-only value is a local calendar day, not UTC midnight. */
+export function parseStoredDate(value: unknown): { date: Date; dateOnly: boolean } | null {
+  if (typeof value !== 'string') return null
+  const only = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  const date = only
+    ? new Date(Number(only[1]), Number(only[2]) - 1, Number(only[3]))
+    : /^\d{4}-\d{2}-\d{2}/.test(value)
+      ? new Date(value)
+      : null
+  return date && !Number.isNaN(date.getTime()) ? { date, dateOnly: Boolean(only) } : null
+}
+
+/** A stored value as shown in the muted column of the index. */
+export function formatValue(value: unknown): string {
+  if (value === undefined || value === null || value === '') return ''
+  const parsed = parseStoredDate(value)
+  if (parsed) {
+    return parsed.dateOnly ? parsed.date.toLocaleDateString() : parsed.date.toLocaleString()
+  }
+  return typeof value === 'object' ? '' : String(value)
+}

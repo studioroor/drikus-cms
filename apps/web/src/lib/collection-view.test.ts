@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { paginate, sortEntries, sortOptions } from './collection-view'
+import { paginate, parseStoredDate, sortEntries, sortOptions } from './collection-view'
 import type { CollectionInfo, EntrySummary } from './content'
 
 const entry = (slug: string, title: string | null, values: Record<string, unknown> = {}) =>
@@ -55,6 +55,20 @@ describe('sortEntries', () => {
     const l = [entry('b', 'Bob', { n: 1 }), entry('a', 'Anna', { n: 1 })]
     expect(sortEntries(l, 'n', 'desc').map((e) => e.slug)).toEqual(['a', 'b'])
     expect(l[0]?.slug).toBe('b')
+  })
+})
+
+describe('parseStoredDate', () => {
+  test('a date-only value keeps its calendar day in local time', () => {
+    const p = parseStoredDate('2026-10-01')
+    expect(p?.dateOnly).toBe(true)
+    expect([p?.date.getFullYear(), p?.date.getMonth(), p?.date.getDate()]).toEqual([2026, 9, 1])
+  })
+
+  test('datetimes and non-dates', () => {
+    expect(parseStoredDate('2026-10-01T12:00:00Z')?.dateOnly).toBe(false)
+    expect(parseStoredDate('hello')).toBeNull()
+    expect(parseStoredDate(5)).toBeNull()
   })
 })
 

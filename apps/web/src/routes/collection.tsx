@@ -8,7 +8,14 @@ import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/feedback'
 import { Input, Select } from '@/components/ui/field'
 import { cn } from '@/lib/cn'
-import { PAGE_SIZE, paginate, type SortDir, sortEntries, sortOptions } from '@/lib/collection-view'
+import {
+  formatValue,
+  PAGE_SIZE,
+  paginate,
+  type SortDir,
+  sortEntries,
+  sortOptions,
+} from '@/lib/collection-view'
 import { entriesQuery, useLabel } from '@/lib/content'
 import { PageHeader } from './app-layout'
 import { MissingCollection, siteQuery, useSiteCollection } from './site'
@@ -34,17 +41,6 @@ function saveSort(siteId: string, collection: string, sort: string, dir: SortDir
   } catch {
     // Storage is only a convenience; the URL still holds the choice.
   }
-}
-
-function formatValue(value: unknown): string {
-  if (value === undefined || value === null || value === '') return ''
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-    const date = new Date(value)
-    if (!Number.isNaN(date.getTime())) {
-      return value.length > 10 ? date.toLocaleString() : date.toLocaleDateString()
-    }
-  }
-  return typeof value === 'object' ? '' : String(value)
 }
 
 export function CollectionPage() {
