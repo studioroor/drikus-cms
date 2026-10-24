@@ -45,6 +45,7 @@ const UserUpdate = z.object({
 const SiteBody = z.object({
   name,
   siteUrl: z.url().max(500).nullable().optional(),
+  description: z.string().trim().max(500).nullable().optional(),
   // GitHub repository ID from /admin/github/repos; null unlinks the repo.
   repoId: z.number().int().positive().nullable().optional(),
   branch: z
@@ -270,6 +271,7 @@ export const adminRoutes = new Hono<AuthedEnv>()
         id: s.id,
         name: s.name,
         siteUrl: s.siteUrl,
+        description: s.description,
         repoId: s.repoId,
         repoFullName: s.repoFullName,
         branch: s.branch,
@@ -292,7 +294,12 @@ export const adminRoutes = new Hono<AuthedEnv>()
     }
     const site = db
       .insert(sites)
-      .values({ name: body.name, siteUrl: body.siteUrl ?? null, ...link })
+      .values({
+        name: body.name,
+        siteUrl: body.siteUrl ?? null,
+        description: body.description || null,
+        ...link,
+      })
       .returning()
       .get()
     audit(db, {

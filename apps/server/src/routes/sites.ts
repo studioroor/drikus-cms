@@ -6,7 +6,7 @@ import { requireSiteAccess, requireUser } from '../middleware/auth'
 import { contentRoutes } from './content'
 
 function toPublicSite(s: typeof sites.$inferSelect) {
-  return { id: s.id, name: s.name, siteUrl: s.siteUrl }
+  return { id: s.id, name: s.name, siteUrl: s.siteUrl, description: s.description }
 }
 
 export const siteRoutes = new Hono<AuthedEnv>()

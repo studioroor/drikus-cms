@@ -142,6 +142,42 @@ describe('linking sites to repositories', () => {
     ])
   })
 
+  test('lists repo descriptions and website addresses to prefill sites with', async () => {
+    const w = world()
+    const admin = await adminClient(w.ctx)
+    Object.assign(w.gh.state.repos.get(BAKERY) ?? {}, {
+      description: ' Website van Bakkerij Jansen ',
+      homepage: 'bakkerijjansen.nl',
+      hasPages: true,
+    })
+    Object.assign(w.gh.state.repos.get(BARBER) ?? {}, { hasPages: true })
+    w.gh.addRepo(1003, 'StudioRoor/studioroor.github.io')
+    Object.assign(w.gh.state.repos.get(1003) ?? {}, { hasPages: true })
+    w.gh.addRepo(1004, 'studioroor/no-site')
+    const repos = await admin.get('/api/admin/github/repos')
+    expect(
+      repos.json.repos.map((r: { description: string | null; siteUrl: string | null }) => [
+        r.description,
+        r.siteUrl,
+      ]),
+    ).toEqual([
+      ['Website van Bakkerij Jansen', 'https://bakkerijjansen.nl'],
+      [null, 'https://studioroor.github.io/kapper-piet/'],
+      [null, null],
+      [null, 'https://studioroor.github.io/'],
+    ])
+  })
+
+  test('stores a site description', async () => {
+    const { ctx } = world()
+    const admin = await adminClient(ctx)
+    const res = await admin.post('/api/admin/sites', { name: 'X', description: ' Bakery ' })
+    expect(res.status).toBe(201)
+    expect((await admin.get('/api/admin/sites')).json.sites[0].description).toBe('Bakery')
+    await admin.patch(`/api/admin/sites/${res.json.id}`, { description: null })
+    expect((await admin.get('/api/admin/sites')).json.sites[0].description).toBeNull()
+  })
+
   test('rejects repositories the app cannot access', async () => {
     const { ctx } = world()
     const admin = await adminClient(ctx)

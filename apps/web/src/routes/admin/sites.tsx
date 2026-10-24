@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
 import { Alert, Badge, EmptyState } from '@/components/ui/feedback'
-import { Checkbox, Field, Input, Select } from '@/components/ui/field'
+import { Checkbox, Field, Input, Select, Textarea } from '@/components/ui/field'
 import { api, unwrap } from '@/lib/api'
 import {
   type AdminSite,
@@ -24,6 +24,7 @@ import {
   adminSitesQuery,
   adminUsersQuery,
   fetchGithubRepos,
+  type GithubRepo,
   githubReposQuery,
   githubStatusQuery,
   useErrorMessage,
@@ -34,11 +35,52 @@ import { ConnectionCheckDialog, GitHubPanel } from './github'
 interface SiteForm {
   name: string
   siteUrl: string
+  description: string
   repoId: number | null
   branch: string
 }
 
-const emptyForm: SiteForm = { name: '', siteUrl: '', repoId: null, branch: '' }
+const emptyForm: SiteForm = { name: '', siteUrl: '', description: '', repoId: null, branch: '' }
+
+/** `hond-morvan-v2` → `Hond Morvan V2` */
+function titleFromRepo(fullName: string) {
+  return (fullName.split('/').pop() ?? '')
+    .split(/[-_.\s]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+type Prefill = Pick<SiteForm, 'name' | 'siteUrl' | 'description' | 'branch'>
+
+function prefillFrom(repo: GithubRepo | undefined): Prefill {
+  return {
+    name: repo ? titleFromRepo(repo.fullName) : '',
+    siteUrl: repo?.siteUrl ?? '',
+    description: repo?.description ?? '',
+    branch: repo?.defaultBranch ?? '',
+  }
+}
+
+/**
+ * Switches the form to another repository, filling in details from GitHub.
+ * Fields the admin typed themselves are kept; empty ones and ones still
+ * holding the previous repo's suggestion are replaced.
+ */
+function withRepo(form: SiteForm, repos: GithubRepo[], repoId: number | null): SiteForm {
+  const before = prefillFrom(repos.find((r) => r.id === form.repoId))
+  const after = prefillFrom(repos.find((r) => r.id === repoId))
+  const pick = (key: keyof Prefill) =>
+    !form[key].trim() || form[key] === before[key] ? after[key] : form[key]
+  return {
+    repoId,
+    name: pick('name'),
+    siteUrl: pick('siteUrl'),
+    description: pick('description'),
+    // A branch only makes sense within its own repository.
+    branch: after.branch,
+  }
+}
 
 function RepoPicker({
   value,
@@ -128,7 +170,13 @@ function SiteDialog({
     setLoadedFor(key)
     setForm(
       site
-        ? { name: site.name, siteUrl: site.siteUrl ?? '', repoId: site.repoId, branch: site.branch }
+        ? {
+            name: site.name,
+            siteUrl: site.siteUrl ?? '',
+            description: site.description ?? '',
+            repoId: site.repoId,
+            branch: site.branch,
+          }
         : emptyForm,
     )
   }
@@ -137,7 +185,11 @@ function SiteDialog({
   const save = useMutation({
     mutationFn: async () => {
       const branch = form.branch.trim()
-      const base = { name: form.name, siteUrl: form.siteUrl.trim() || null }
+      const base = {
+        name: form.name,
+        siteUrl: form.siteUrl.trim() || null,
+        description: form.description.trim() || null,
+      }
       if (site) {
         // Only send link changes, so editing a name never depends on GitHub being reachable.
         const json = {
@@ -188,6 +240,27 @@ function SiteDialog({
     >
       <form id="site-form" onSubmit={submit} className="space-y-4">
         {save.error && <Alert>{errorMessage(save.error)}</Alert>}
+        <RepoPicker
+          value={form.repoId}
+          site={site}
+          sites={sites}
+          onChange={(repoId) => setForm(withRepo(form, repos.data ?? [], repoId))}
+        />
+        {form.repoId && (
+          <Field
+            label={t('admin.sites.branch')}
+            hint={t('admin.sites.branchHint', { branch: defaultBranch })}
+          >
+            {(id) => (
+              <Input
+                id={id}
+                placeholder={defaultBranch}
+                value={form.branch}
+                onChange={(e) => setForm({ ...form, branch: e.target.value })}
+              />
+            )}
+          </Field>
+        )}
         <Field label={t('admin.sites.name')}>
           {(id) => (
             <Input
@@ -210,27 +283,17 @@ function SiteDialog({
             />
           )}
         </Field>
-        <RepoPicker
-          value={form.repoId}
-          site={site}
-          sites={sites}
-          onChange={(repoId) => setForm({ ...form, repoId, branch: '' })}
-        />
-        {form.repoId && (
-          <Field
-            label={t('admin.sites.branch')}
-            hint={t('admin.sites.branchHint', { branch: defaultBranch })}
-          >
-            {(id) => (
-              <Input
-                id={id}
-                placeholder={defaultBranch}
-                value={form.branch}
-                onChange={(e) => setForm({ ...form, branch: e.target.value })}
-              />
-            )}
-          </Field>
-        )}
+        <Field label={t('admin.sites.description')}>
+          {(id) => (
+            <Textarea
+              id={id}
+              rows={2}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              maxLength={500}
+            />
+          )}
+        </Field>
       </form>
     </Dialog>
   )
@@ -354,6 +417,9 @@ export function SitesPage() {
               <li key={s.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4">
                 <div className="min-w-0 flex-1 basis-60">
                   <p className="truncate font-medium">{s.name}</p>
+                  {s.description && (
+                    <p className="truncate text-sm text-stone-500">{s.description}</p>
+                  )}
                   {s.siteUrl && (
                     <a
                       href={s.siteUrl}

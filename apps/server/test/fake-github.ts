@@ -6,6 +6,9 @@ interface FakeRepo {
   fullName: string
   defaultBranch: string
   private: boolean
+  description?: string
+  homepage?: string
+  hasPages?: boolean
   branches: Map<string, { commitSha: string; treeSha: string }>
 }
 
@@ -154,6 +157,9 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
     default_branch: r.defaultBranch,
     private: r.private,
     html_url: `https://github.com/${r.fullName}`,
+    description: r.description ?? null,
+    homepage: r.homepage ?? null,
+    has_pages: r.hasPages ?? false,
   })
 
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {

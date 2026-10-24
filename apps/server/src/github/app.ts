@@ -15,6 +15,9 @@ export interface RepoInfo {
   defaultBranch: string
   private: boolean
   htmlUrl: string
+  description: string | null
+  /** The repo's website: its configured homepage, else its GitHub Pages URL. */
+  siteUrl: string | null
 }
 
 export interface TreeChange {
@@ -212,6 +215,23 @@ interface GitHubRepo {
   default_branch: string
   private: boolean
   html_url: string
+  description?: string | null
+  homepage?: string | null
+  has_pages?: boolean
+}
+
+/** `https://owner.github.io/repo/`, or the root for an `owner.github.io` repo. */
+function pagesUrl(fullName: string) {
+  const [owner = '', name = ''] = fullName.toLowerCase().split('/')
+  const host = `${owner}.github.io`
+  return name === host ? `https://${host}/` : `https://${host}/${name}/`
+}
+
+function homepageUrl(homepage: string | null | undefined) {
+  const value = homepage?.trim()
+  if (!value) return null
+  const url = /^https?:\/\//i.test(value) ? value : `https://${value}`
+  return URL.canParse(url) ? url : null
 }
 
 function toRepoInfo(r: GitHubRepo): RepoInfo {
@@ -221,6 +241,8 @@ function toRepoInfo(r: GitHubRepo): RepoInfo {
     defaultBranch: r.default_branch,
     private: r.private,
     htmlUrl: r.html_url,
+    description: r.description?.trim() || null,
+    siteUrl: homepageUrl(r.homepage) ?? (r.has_pages ? pagesUrl(r.full_name) : null),
   }
 }
 

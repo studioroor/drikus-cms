@@ -73,6 +73,7 @@ export const sites = sqliteTable('sites', {
   id: id(),
   name: text('name').notNull(),
   siteUrl: text('site_url'),
+  description: text('description'),
   // GitHub repository ID: stable across renames, so it's the real link.
   repoId: integer('repo_id').unique(),
   // Cached `owner/name`, refreshed from GitHub when the repo is renamed.
