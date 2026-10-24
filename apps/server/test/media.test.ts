@@ -303,6 +303,9 @@ describe('media usage', () => {
     })
     expect(await used()).toEqual({ 'a.webp': true, 'b.webp': true })
 
+    await w.editor.post(`${w.base}/collections/posts/entries/taart/discard`)
+    expect(await used()).toEqual({ 'a.webp': true, 'b.webp': false })
+
     const staged = await w.upload(await photo(), 'Vers.png')
     const fresh = (await w.editor.get(`${w.base}/media`)).json.items.find(
       (i: { src: string }) => i.src === staged.json.item.src,

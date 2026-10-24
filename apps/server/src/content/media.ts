@@ -266,8 +266,17 @@ export class MediaService {
     const site = this.content.site
     const head = await this.content.sync.head(site)
     const drafts = this.content.drafts()
-    const latest = drafts.reduce((max, d) => Math.max(max, d.updatedAt?.getTime() ?? 0), 0)
-    const key = `${site.id}:${head.commitSha}:${latest}`
+    // Covers every draft, so discarding or editing any one of them changes the key.
+    const stamp = createHash('sha256')
+      .update(
+        drafts
+          .map((d) => `${d.path}@${d.updatedAt?.getTime() ?? 0}`)
+          .sort()
+          .join('\n'),
+      )
+      .digest('hex')
+      .slice(0, 16)
+    const key = `${site.id}:${head.commitSha}:${drafts.length}:${stamp}`
     let known = usageCache.get(key)
     if (!known) {
       known = new Map()
@@ -277,7 +286,9 @@ export class MediaService {
     }
     const missing = srcs.filter((s) => !known.has(s))
     if (missing.length) {
-      const texts = await this.#contentTexts(drafts)
+      const { texts, complete } = await this.#contentTexts(drafts)
+      // A file we couldn't read might use anything: count it as used, and don't cache that.
+      if (!complete) return new Set(srcs)
       for (const src of missing)
         known.set(
           src,
@@ -288,23 +299,30 @@ export class MediaService {
   }
 
   /** Text of every published collection file (minus deleted ones) plus every upsert draft. */
-  async #contentTexts(drafts: ReturnType<ContentService['drafts']>): Promise<string[]> {
+  async #contentTexts(
+    drafts: ReturnType<ContentService['drafts']>,
+  ): Promise<{ texts: string[]; complete: boolean }> {
     const config = await this.content.config()
     const files = await this.content.files()
     const owned = (path: string) =>
       config.collections.some((c) => (c.folder ? path.startsWith(`${c.folder}/`) : path === c.file))
     const paths = [...files.keys()].filter(owned)
     const texts: string[] = []
+    let complete = true
     const queue = [...paths]
     const worker = async () => {
       for (let p = queue.shift(); p; p = queue.shift()) {
         const sha = files.get(p) as string
-        texts.push((await this.content.sync.blob(this.content.site, sha)).toString('utf8'))
+        try {
+          texts.push((await this.content.sync.blob(this.content.site, sha)).toString('utf8'))
+        } catch {
+          complete = false
+        }
       }
     }
     await Promise.all(Array.from({ length: 8 }, worker))
     for (const d of drafts) if (d.action !== 'delete' && d.content) texts.push(d.content)
-    return texts
+    return { texts, complete }
   }
 
   async list(): Promise<{ settings: MediaSettings; items: MediaItem[]; complete: boolean }> {

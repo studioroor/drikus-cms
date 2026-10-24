@@ -241,18 +241,20 @@ export function MediaPicker({
 
         {library.data?.complete === false && <Alert tone="info">{t('media.incomplete')}</Alert>}
 
-        {(library.data?.items.length ?? 0) > 8 && (
+        {(library.data?.items.length ?? 0) > 0 && (
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative min-w-48 flex-1">
-              <Search className="absolute top-3.5 left-3 size-4 text-stone-400" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t('media.search')}
-                aria-label={t('media.search')}
-                className="pl-9"
-              />
-            </div>
+            {(library.data?.items.length ?? 0) > 8 && (
+              <div className="relative min-w-48 flex-1">
+                <Search className="absolute top-3.5 left-3 size-4 text-stone-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('media.search')}
+                  aria-label={t('media.search')}
+                  className="pl-9"
+                />
+              </div>
+            )}
             <label className="flex items-center gap-2 text-sm text-stone-700">
               <input
                 type="checkbox"
