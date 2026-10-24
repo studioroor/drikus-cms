@@ -62,6 +62,21 @@ describe('content overview', () => {
     ])
   })
 
+  test('exposes the sort settings of each collection', async () => {
+    const w = await world()
+    const res = await w.editor.get(`${w.base}/content`)
+    expect(
+      res.json.collections.map((c: { name: string; sortBy: string | null; sortOrder: string }) => [
+        c.name,
+        c.sortBy,
+        c.sortOrder,
+      ]),
+    ).toEqual([
+      ['posts', 'date', 'desc'],
+      ['home', null, 'asc'],
+    ])
+  })
+
   test('explains missing and broken configs (details for the superadmin only)', async () => {
     const w = await world({ '.drikus/config.yml': 'collections: nope' })
     const editorView = await w.editor.get(`${w.base}/content`)
@@ -100,6 +115,19 @@ describe('entries', () => {
       ['nieuw-brood', 'Nieuw brood', 'published'],
       ['oud-nieuws', 'Oud nieuws', 'published'],
     ])
+  })
+
+  test('lists the sort and date values of each entry', async () => {
+    const w = await world({
+      'src/content/posts/zonder.md': '---\ntitle: Zonder datum\nextra: x\n---\n\nHoi\n',
+    })
+    const res = await w.editor.get(`${w.base}/collections/posts/entries`)
+    const values = Object.fromEntries(
+      res.json.entries.map((e: { slug: string; values: unknown }) => [e.slug, e.values]),
+    )
+    expect(values['nieuw-brood']).toEqual({ date: '2026-10-01' })
+    expect(values['oud-nieuws']).toEqual({ date: '2026-01-01' })
+    expect(values.zonder).toEqual({})
   })
 
   test('reads an entry with markdown body', async () => {

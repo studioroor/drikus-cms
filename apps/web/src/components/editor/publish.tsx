@@ -29,7 +29,7 @@ import {
   useLabel,
 } from '@/lib/content'
 import { useErrorMessage } from '@/lib/queries'
-import { StatusBadge } from './status'
+import { LocaleTag, StatusBadge } from './status'
 
 function useCollectionLabel(content: SiteContent) {
   const label = useLabel()
@@ -148,7 +148,7 @@ function ProblemRow({
     mutationFn: (action: 'mine' | 'theirs' | 'discard') =>
       action === 'discard'
         ? discardEntry(siteId, problem.collection, problem.slug)
-        : resolveConflict(siteId, problem.collection, problem.slug, action),
+        : resolveConflict(siteId, problem.collection, problem.slug, action, problem.locale),
     onSuccess: refresh,
   })
   const name =
@@ -158,10 +158,14 @@ function ProblemRow({
   return (
     <li className="space-y-2 px-4 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="font-medium">{name}</span>
+        <span className="inline-flex items-center gap-2 font-medium">
+          {name}
+          <LocaleTag locale={problem.locale} />
+        </span>
         <Link
           to="/sites/$siteId/$collection/edit/$slug"
           params={{ siteId, collection: problem.collection, slug: problem.slug }}
+          search={problem.locale ? { locale: problem.locale } : {}}
           className="text-sm text-brand-700 hover:underline"
         >
           {t('publish.open')}
@@ -291,7 +295,7 @@ export function PublishDialog({
               <ul className="divide-y divide-amber-100 rounded-lg border border-amber-200 bg-amber-50/60">
                 {problems.map((p) => (
                   <ProblemRow
-                    key={`${p.collection}/${p.slug}`}
+                    key={`${p.collection}/${p.slug}/${p.locale ?? ''}/${p.kind}`}
                     siteId={siteId}
                     content={content}
                     problem={p}
@@ -309,6 +313,7 @@ export function PublishDialog({
                     {c.title ??
                       (c.slug === SINGLETON_SLUG ? collectionLabel(c.collection) : c.slug)}
                   </span>
+                  <LocaleTag locale={'locale' in c ? c.locale : null} />
                   <span className="text-stone-500">{collectionLabel(c.collection)}</span>
                   <StatusBadge status={c.status} />
                 </li>

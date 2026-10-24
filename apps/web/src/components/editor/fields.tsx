@@ -1,13 +1,19 @@
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react'
-import { lazy, type ReactNode, Suspense, useId, useState } from 'react'
+import { ChevronDown, ChevronUp, Languages, Plus, Trash2 } from 'lucide-react'
+import { lazy, type ReactNode, Suspense, useContext, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/field'
 import { cn } from '@/lib/cn'
 import { type Data, entriesQuery, type FieldDef, useLabel } from '@/lib/content'
+import { asObject, isImageList, isInlineList, itemTitle, move, usesListEditor } from '@/lib/list'
 import { useEditor } from './context'
+import { ImageGrid } from './image-grid'
+import { ListEditor } from './list-editor'
+import { useListIds, useListMode } from './list-ids'
+import { ListNavContext } from './list-nav'
 import { MediaField } from './media'
+import { NestedRows } from './nested-rows'
 
 // Tiptap is large: load it only when a rich text field is on screen.
 const RichTextEditor = lazy(() =>
@@ -19,30 +25,9 @@ type Block = NonNullable<FieldDef['blocks']>[number]
 const textarea =
   'block w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-stone-900 shadow-sm placeholder:text-stone-400 focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/20 disabled:bg-stone-100'
 
-/** Stable React keys for list items that get reordered (objects keep their identity). */
-const itemKeys = new WeakMap<object, string>()
-function keyFor(item: unknown, index: number) {
-  if (typeof item !== 'object' || item === null) return `i${index}`
-  let key = itemKeys.get(item)
-  if (!key) {
-    key = crypto.randomUUID()
-    itemKeys.set(item, key)
-  }
-  return key
-}
-
 const asString = (v: unknown) =>
   typeof v === 'string' ? v : v === undefined || v === null ? '' : String(v)
-const asObject = (v: unknown): Data =>
-  typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Data) : {}
 const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
-
-function move<T>(list: T[], from: number, to: number): T[] {
-  const next = [...list]
-  const [item] = next.splice(from, 1)
-  next.splice(to, 0, item as T)
-  return next
-}
 
 /** All fields of an object (entry, group, list item or block). */
 export function FieldList({
@@ -87,19 +72,31 @@ function FieldRow({
   const id = useId()
   const { t } = useTranslation()
   const label = useLabel()
-  const { missing } = useEditor()
+  const { missing, translated } = useEditor()
+  // Shared fields are top-level only; the server copies them to the other languages.
+  const shared = translated && field.i18n === false && path === field.name
   const isGroup = field.type === 'object' || field.type === 'list' || field.type === 'blocks'
   const isMissing = missing.has(path)
+  // The list editor's and photo grid's toolbars carry the label (nested rows don't have one).
+  const nested = useContext(ListNavContext) !== null
+  const inListEditor = useListMode(path, initialMode(field, value)) === 'editor' && !nested
+  const ownLabel = inListEditor || isImageList(field)
 
   const heading = (
     <span className="flex items-baseline gap-2">
       <span className="text-sm font-medium text-stone-800">{label(field.label, field.name)}</span>
       {field.required && <span className="text-xs text-stone-400">{t('editor.required')}</span>}
+      {shared && (
+        <span className="inline-flex items-center gap-1 text-xs text-stone-500">
+          <Languages className="size-3.5" />
+          {t('editor.sharedField')}
+        </span>
+      )}
     </span>
   )
   return (
     <div className="space-y-1.5" data-field={path}>
-      {field.type === 'boolean' ? null : isGroup ? (
+      {field.type === 'boolean' || ownLabel ? null : isGroup ? (
         <div>{heading}</div>
       ) : (
         <label htmlFor={id} className="block">
@@ -283,12 +280,40 @@ export function FieldInput({
         </Group>
       )
     case 'list':
-      return <ListInput field={field} value={asArray(value)} path={path} onChange={onChange} />
+      if (isImageList(field))
+        return <ImageGrid field={field} value={asArray(value)} path={path} onChange={onChange} />
+      return <ListField field={field} value={asArray(value)} path={path} onChange={onChange} />
     case 'blocks':
-      return <BlocksInput field={field} value={asArray(value)} path={path} onChange={onChange} />
+      return <ListField field={field} value={asArray(value)} path={path} onChange={onChange} />
     case 'hidden':
       return null
   }
+}
+
+const initialMode = (field: FieldDef, value: unknown) =>
+  usesListEditor(field) && !isInlineList(field, asArray(value)) ? 'editor' : 'inline'
+
+function ListField({
+  field,
+  value,
+  path,
+  onChange,
+}: {
+  field: FieldDef
+  value: unknown[]
+  path: string
+  onChange: (v: unknown) => void
+}) {
+  // Inside a list editor's pane, nested lists drill in rather than opening a second editor.
+  const nested = useContext(ListNavContext) !== null
+  const editor = useListMode(path, initialMode(field, value)) === 'editor'
+  return editor && nested ? (
+    <NestedRows field={field} value={value} path={path} onChange={onChange} />
+  ) : editor ? (
+    <ListEditor field={field} value={value} path={path} onChange={onChange} />
+  ) : (
+    <ListInput field={field} value={value} path={path} onChange={onChange} />
+  )
 }
 
 function Group({ children }: { children: ReactNode }) {
@@ -479,15 +504,7 @@ function ItemControls({
   )
 }
 
-function itemTitle(fields: FieldDef[], item: Data): string | null {
-  for (const f of fields) {
-    const v = item[f.name]
-    if ((f.type === 'string' || f.type === 'text') && typeof v === 'string' && v.trim())
-      return v.trim().slice(0, 80)
-  }
-  return null
-}
-
+/** A list of single values, or a short list of simple objects, edited in place. */
 function ListInput({
   field,
   value,
@@ -501,14 +518,25 @@ function ListInput({
 }) {
   const { t } = useTranslation()
   const { readOnly } = useEditor()
+  const ids = useListIds(path, value.length)
   const full = field.maxItems !== undefined && value.length >= field.maxItems
   const update = (i: number, item: unknown) => onChange(value.map((v, j) => (j === i ? item : v)))
+  const add = (item: unknown) => {
+    ids.insert(value.length)
+    onChange([...value, item])
+  }
   const controls = (i: number) => (
     <ItemControls
       index={i}
       count={value.length}
-      onMove={(to) => onChange(move(value, i, to))}
-      onRemove={() => onChange(value.filter((_, j) => j !== i))}
+      onMove={(to) => {
+        ids.move(i, to)
+        onChange(move(value, i, to))
+      }}
+      onRemove={() => {
+        ids.remove(i)
+        onChange(value.filter((_, j) => j !== i))
+      }}
     />
   )
 
@@ -518,7 +546,7 @@ function ListInput({
     return (
       <div className="space-y-2">
         {value.map((item, i) => (
-          <div key={keyFor(item, i)} className="flex items-start gap-2">
+          <div key={ids.ids[i]} className="flex items-start gap-2">
             <div className="flex-1">
               <FieldInput
                 id={`${path}.${i}`}
@@ -532,11 +560,7 @@ function ListInput({
           </div>
         ))}
         {!readOnly && !full && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => onChange([...value, inner.default ?? undefined])}
-          >
+          <Button variant="secondary" size="sm" onClick={() => add(inner.default ?? undefined)}>
             <Plus className="size-4" /> {t('editor.add')}
           </Button>
         )}
@@ -548,7 +572,7 @@ function ListInput({
   return (
     <div className="space-y-3">
       {value.map((item, i) => (
-        <div key={keyFor(item, i)} className="rounded-xl border border-stone-200 bg-white">
+        <div key={ids.ids[i]} className="rounded-xl border border-stone-200 bg-white">
           <div className="flex items-center justify-between gap-2 border-b border-stone-100 py-1.5 pr-1.5 pl-4">
             <span className="truncate text-sm font-medium text-stone-700">
               {itemTitle(fields, asObject(item)) ?? t('editor.item', { n: i + 1 })}
@@ -566,7 +590,7 @@ function ListInput({
         </div>
       ))}
       {!readOnly && !full && (
-        <Button variant="secondary" size="sm" onClick={() => onChange([...value, {}])}>
+        <Button variant="secondary" size="sm" onClick={() => add({})}>
           <Plus className="size-4" /> {t('editor.add')}
         </Button>
       )}
@@ -574,106 +598,34 @@ function ListInput({
   )
 }
 
-function BlocksInput({
-  field,
-  value,
-  path,
-  onChange,
+/** The block types to choose from when adding a block. */
+export function BlockPicker({
+  blocks,
+  onPick,
+  onCancel,
 }: {
-  field: FieldDef
-  value: unknown[]
-  path: string
-  onChange: (v: unknown) => void
+  blocks: Block[]
+  onPick: (block: Block) => void
+  onCancel: () => void
 }) {
   const { t } = useTranslation()
   const label = useLabel()
-  const { readOnly } = useEditor()
-  const [picking, setPicking] = useState(false)
-  const blocks: Block[] = field.blocks ?? []
-  const typeKey = field.typeKey
-  const update = (i: number, item: Data) => onChange(value.map((v, j) => (j === i ? item : v)))
-  const add = (block: Block) => {
-    const initial: Data = { [typeKey]: block.name }
-    for (const f of block.fields) if (f.default !== undefined) initial[f.name] = f.default
-    onChange([...value, initial])
-    setPicking(false)
-  }
-
   return (
-    <div className="space-y-3">
-      {value.map((raw, i) => {
-        const item = asObject(raw)
-        const block = blocks.find((b) => b.name === item[typeKey])
-        return (
-          <div
-            key={keyFor(raw, i)}
-            className="rounded-xl border border-stone-200 bg-white shadow-sm"
-          >
-            <div className="flex items-center justify-between gap-2 border-b border-stone-100 py-1.5 pr-1.5 pl-4">
-              <span className="truncate text-sm">
-                <span className="font-semibold text-stone-800">
-                  {block ? label(block.label, block.name) : String(item[typeKey] ?? '?')}
-                </span>
-                {block && itemTitle(block.fields, item) && (
-                  <span className="text-stone-500"> · {itemTitle(block.fields, item)}</span>
-                )}
-              </span>
-              <ItemControls
-                index={i}
-                count={value.length}
-                onMove={(to) => onChange(move(value, i, to))}
-                onRemove={() => onChange(value.filter((_, j) => j !== i))}
-              />
-            </div>
-            <div className="p-4">
-              {block ? (
-                <>
-                  {block.hint && <p className="mb-4 text-sm text-stone-500">{label(block.hint)}</p>}
-                  <FieldList
-                    fields={block.fields}
-                    value={item}
-                    path={`${path}.${i}`}
-                    onChange={(v) => update(i, v)}
-                  />
-                </>
-              ) : (
-                <p className="text-sm text-stone-500">{t('errors.invalid_input')}</p>
-              )}
-            </div>
-          </div>
-        )
-      })}
-      {!readOnly && (
-        <div>
-          {picking ? (
-            <div className="grid gap-2 rounded-xl border border-dashed border-stone-300 bg-white p-3 sm:grid-cols-2">
-              {blocks.map((b) => (
-                <button
-                  key={b.name}
-                  type="button"
-                  onClick={() => add(b)}
-                  className="rounded-lg border border-stone-200 px-3 py-2.5 text-left hover:border-brand-600 hover:bg-brand-50"
-                >
-                  <span className="block text-sm font-medium">{label(b.label, b.name)}</span>
-                  {b.hint && <span className="block text-xs text-stone-500">{label(b.hint)}</span>}
-                </button>
-              ))}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="sm:col-span-2"
-                onClick={() => setPicking(false)}
-              >
-                {t('common.cancel')}
-              </Button>
-            </div>
-          ) : (
-            <Button variant="secondary" size="sm" onClick={() => setPicking(true)}>
-              <Plus className="size-4" /> {t('editor.addBlock')}
-            </Button>
-          )}
-        </div>
-      )}
+    <div className="grid gap-2 sm:grid-cols-2">
+      {blocks.map((b) => (
+        <button
+          key={b.name}
+          type="button"
+          onClick={() => onPick(b)}
+          className="rounded-lg border border-stone-200 px-3 py-2.5 text-left hover:border-brand-600 hover:bg-brand-50"
+        >
+          <span className="block text-sm font-medium">{label(b.label, b.name)}</span>
+          {b.hint && <span className="block text-xs text-stone-500">{label(b.hint)}</span>}
+        </button>
+      ))}
+      <Button variant="ghost" size="sm" className="sm:col-span-2" onClick={onCancel}>
+        {t('common.cancel')}
+      </Button>
     </div>
   )
 }

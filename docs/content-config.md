@@ -38,6 +38,7 @@ icon: src/assets/brand/mark.svg
 | `summary`              |              | Field shown as the entry's title in lists (default: `title` or the first text field)                              |
 | `sortBy`, `sortOrder`  |              | Sort lists by a field, `asc` (default) or `desc`                                                                  |
 | `create`, `delete`     |              | Allow editors to add or delete entries (default `true`)                                                           |
+| `i18n`                 |              | `true`: one version per site language, see [Multiple languages](#multiple-languages)                              |
 | `fields`               | required     | The form, see below                                                                                               |
 
 Paths can't start with `/`, contain `..`, or point inside `.git`, `.github` or `.drikus`. The CMS
@@ -50,6 +51,7 @@ Frontmatter keys that aren't in `fields` (for example Astro's `layout`) are kept
 ## Fields
 
 Every field has `name` (required), and optionally `label`, `hint`, `required` and `default`.
+In translated collections, top-level fields can also set `i18n: false` (see below).
 
 | `type`             | Stores                                                                    | Options                                                         |
 | ------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------- |
@@ -93,10 +95,33 @@ image), list the hints as `imageStyles` and editors can pick one per image:
 
 What a hint does is up to your site; the CMS only writes it into the path.
 
+### Lists and blocks in the editor
+
+How a `list` or `blocks` field looks to editors depends on what it holds:
+- **Lists of groups and `blocks`** open as an index on the left and a detail pane on the right.
+  Editors pick an item to edit it, and can add, reorder and delete items from the index. Rows show
+  the first text value as the title, and a thumbnail from the item's first `image` field (at the top
+  level, or one level into an `object`). Lists inside an item drill down the same way.
+- **Short lists stay inline**: up to 3 items whose fields are all short (single-line text, number,
+  date, select and the like) are edited right in the form. This is decided once, when the form
+  opens, so a list doesn't jump layout while someone types.
+- **Image lists** (`type: list` with `field: { type: image }`) become a photo grid. Editors add
+  several photos at once, from the library (multi-select) or by dropping multiple files, and can
+  reorder or remove them. `maxItems` is respected; extra files are dropped.
+- The selected item is kept in the page URL (`?item=`), so a reload or a shared link returns to the
+  same item.
+
+### Sorting and paging
+
+The index of a folder collection can be sorted by title, by its `sortBy` field, or by any `date`
+or `datetime` field. It shows 25 entries per page.
+
 ## Images and files
 
 Editors upload images and files from any `image` or `file` field (click or drag and drop), from
-the image button in rich text, or pick earlier uploads from the **media library**.
+the image button in rich text, or pick earlier uploads from the **media library**. Tick **Not used yet** in the library to see
+files that no collection file or pending draft mentions. Very large repositories may list only
+part of their files; the library says so.
 
 ```yaml
 media:
@@ -122,6 +147,51 @@ media:
   deleted; published files stay (pages may use them).
 - Previews in the editor come from the CMS itself, so new uploads show before they're published.
   Paths that aren't in the repository are previewed from the live site.
+
+## Multiple languages
+
+Sites with content in more than one language list their languages once. The first one (or
+`default`) is the main language: lists show its titles and new entries start in it.
+
+```yaml
+i18n:
+  locales: [nl, en]
+  default: nl # optional, defaults to the first
+```
+
+Then mark which collections are translated. The CMS supports these layouts:
+
+| Layout                           | Config                                        | Files                                                |
+| -------------------------------- | --------------------------------------------- | ---------------------------------------------------- |
+| A folder per language            | `folder: src/content/posts/{{locale}}`        | `src/content/posts/nl/brood.md`, `…/en/brood.md`     |
+| The language in the file name    | `folder: src/content/team` + `i18n: true`     | `src/content/team/anna.nl.yaml`, `…/anna.en.yaml`    |
+| A file per language              | `file: src/content/{{locale}}/about.md`       | `src/content/nl/about.md`, `src/content/en/about.md` |
+| One data file with all languages | `file: src/data/settings.json` + `i18n: true` | `{ "nl": { … }, "en": { … } }`                       |
+
+`{{locale}}` can be anywhere in the path. A data file with all languages must be JSON or YAML
+(Markdown holds one language per file). Collections without `{{locale}}` or `i18n: true` aren't
+translated and work as before.
+
+```yaml
+collections:
+  - name: posts
+    folder: src/content/posts/{{locale}}
+    fields:
+      - { name: title, required: true }
+      - { name: date, type: date, i18n: false } # the same in every language
+      - { name: cover, type: image, i18n: false }
+      - { name: body, type: richtext }
+```
+
+- The editor shows **a tab per language** with its status. Lists show every entry once, with a dot
+  per language (filled: has content, open: not translated yet).
+- An entry with the same slug in each language folder (or file name) is one entry in the CMS.
+- Opening a language that has no version yet starts it with the shared fields filled in; it's only
+  created once the editor types something.
+- **Shared fields** (`i18n: false`) are marked "Same in all languages". Changing one copies the
+  value to the other languages that exist, so dates, images and prices can't drift apart.
+- Required fields are checked per language when publishing, and the change lists show which
+  language changed. Discarding or deleting an entry applies to all its languages.
 
 ## Drafts and publishing
 

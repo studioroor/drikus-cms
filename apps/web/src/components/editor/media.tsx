@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileText, ImagePlus, Search, Trash2, Upload } from 'lucide-react'
-import { type DragEvent, type ReactNode, useId, useRef, useState } from 'react'
+import { Check, FileText, ImagePlus, Search, Trash2, Upload } from 'lucide-react'
+import { type DragEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -30,27 +30,55 @@ export function useUpload(siteId: string) {
   })
 }
 
-/** A hidden file input plus drag-and-drop on its children. */
+/**
+ * False once the component has unmounted. An upload keeps running after its field closes (the
+ * list editor unmounts item panes routinely); its result must then not be applied, because the
+ * change handler from the last render would write back the entry as it was at that moment.
+ */
+export function useMounted() {
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  return mounted
+}
+
+/**
+ * A hidden file input plus drag-and-drop on its children. With `multiple`, every chosen or
+ * dropped file goes to `onFiles`; otherwise the first one goes to `onFile`.
+ */
 export function DropZone({
   kind,
   disabled,
+  multiple,
   onFile,
+  onFiles,
   children,
   className,
 }: {
   kind: Kind
   disabled?: boolean
-  onFile: (file: File) => void
+  multiple?: boolean
+  onFile?: (file: File) => void
+  onFiles?: (files: File[]) => void
   children: (open: () => void) => ReactNode
   className?: string
 }) {
   const input = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
+  const take = (list: FileList | null | undefined) => {
+    const files = Array.from(list ?? [])
+    if (!files.length || disabled) return
+    if (multiple && onFiles) onFiles(files)
+    else onFile?.(files[0] as File)
+  }
   const drop = (e: DragEvent) => {
     e.preventDefault()
     setOver(false)
-    const file = e.dataTransfer.files[0]
-    if (file && !disabled) onFile(file)
+    take(e.dataTransfer.files)
   }
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop only; the button inside is the accessible way
@@ -69,9 +97,9 @@ export function DropZone({
         accept={ACCEPT[kind]}
         className="hidden"
         disabled={disabled}
+        multiple={multiple}
         onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) onFile(file)
+          take(e.target.files)
           e.target.value = ''
         }}
       />
@@ -98,19 +126,28 @@ function Thumb({ siteId, item }: { siteId: string; item: MediaItem }) {
   )
 }
 
-/** Browse, upload and pick images or files for a site. */
+/**
+ * Browse, upload and pick images or files for a site. With `multiple`, clicking toggles a
+ * selection that Add hands to `onSelectMany`; items whose src is in `current` can't be picked.
+ */
 export function MediaPicker({
   siteId,
   kind,
   open,
   onClose,
   onSelect,
+  multiple,
+  current,
+  onSelectMany,
 }: {
   siteId: string
   kind: Kind
   open: boolean
   onClose: () => void
-  onSelect: (src: string) => void
+  onSelect?: (src: string) => void
+  multiple?: boolean
+  current?: string[]
+  onSelectMany?: (srcs: string[]) => void
 }) {
   const { t } = useTranslation()
   const errorMessage = useErrorMessage()
@@ -118,26 +155,78 @@ export function MediaPicker({
   const library = useQuery({ ...mediaQuery(siteId), enabled: open })
   const upload = useUpload(siteId)
   const [search, setSearch] = useState('')
+  const [unusedOnly, setUnusedOnly] = useState(false)
   const remove = useMutation({
     mutationFn: (src: string) => removeMedia(siteId, src),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sites', siteId] }),
   })
 
-  const pick = (src: string) => {
-    onSelect(src)
+  const [selected, setSelected] = useState<string[]>([])
+  const added = new Set(current ?? [])
+
+  const close = () => {
+    setSelected([])
     onClose()
+  }
+  const pick = (src: string) => {
+    onSelect?.(src)
+    close()
+  }
+  const toggle = (src: string) =>
+    setSelected((s) => (s.includes(src) ? s.filter((x) => x !== src) : [...s, src]))
+  const choose = (src: string) => {
+    if (!multiple) pick(src)
+    else if (!added.has(src)) toggle(src)
+  }
+  const addSelected = () => {
+    onSelectMany?.(selected)
+    close()
+  }
+  /** In multi mode uploads run one after another and each new item is selected. */
+  const uploadMany = async (files: File[]) => {
+    for (const file of files) {
+      try {
+        const item = await upload.mutateAsync(file)
+        setSelected((s) => (s.includes(item.src) || added.has(item.src) ? s : [...s, item.src]))
+      } catch {
+        // Shown through upload.error; carry on with the remaining files.
+      }
+    }
   }
   const term = search.trim().toLowerCase()
   const items = (library.data?.items ?? [])
     .filter((i) => kind === 'file' || i.kind === 'image')
     .filter((i) => !term || i.name.toLowerCase().includes(term))
+    .filter((i) => !unusedOnly || !i.used)
 
   return (
-    <Dialog open={open} onClose={onClose} title={t('media.library')} size="lg">
+    <Dialog
+      open={open}
+      onClose={close}
+      title={t('media.library')}
+      size="lg"
+      footer={
+        multiple ? (
+          <>
+            <span className="mr-auto self-center text-sm text-stone-600">
+              {t('media.selected', { count: selected.length })}
+            </span>
+            <Button variant="secondary" onClick={close}>
+              {t('common.cancel')}
+            </Button>
+            <Button disabled={!selected.length} onClick={addSelected}>
+              {t('media.add')}
+            </Button>
+          </>
+        ) : undefined
+      }
+    >
       <div className="space-y-4">
         <DropZone
           kind={kind}
           disabled={upload.isPending}
+          multiple={multiple}
+          onFiles={(files) => void uploadMany(files)}
           onFile={(file) => upload.mutate(file, { onSuccess: (item) => pick(item.src) })}
           className="rounded-xl border-2 border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-center"
         >
@@ -166,16 +255,30 @@ export function MediaPicker({
         {upload.error && <Alert>{errorMessage(upload.error)}</Alert>}
         {remove.error && <Alert>{errorMessage(remove.error)}</Alert>}
 
-        {(library.data?.items.length ?? 0) > 8 && (
-          <div className="relative">
-            <Search className="absolute top-3.5 left-3 size-4 text-stone-400" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('media.search')}
-              aria-label={t('media.search')}
-              className="pl-9"
-            />
+        {library.data?.complete === false && <Alert tone="info">{t('media.incomplete')}</Alert>}
+
+        {(library.data?.items.length ?? 0) > 0 && (
+          <div className="flex flex-wrap items-center gap-3">
+            {(library.data?.items.length ?? 0) > 8 && (
+              <div className="relative min-w-48 flex-1">
+                <Search className="absolute top-3.5 left-3 size-4 text-stone-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('media.search')}
+                  aria-label={t('media.search')}
+                  className="pl-9"
+                />
+              </div>
+            )}
+            <label className="flex items-center gap-2 text-sm text-stone-700">
+              <input
+                type="checkbox"
+                checked={unusedOnly}
+                onChange={(e) => setUnusedOnly(e.target.checked)}
+              />
+              {t('media.notUsed')}
+            </label>
           </div>
         )}
 
@@ -191,37 +294,66 @@ export function MediaPicker({
           />
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {items.map((item) => (
-              <li key={item.path} className="group relative">
-                <button
-                  type="button"
-                  onClick={() => pick(item.src)}
-                  className="block w-full rounded-xl border border-stone-200 p-1.5 text-left hover:border-brand-600 hover:bg-brand-50 focus-visible:border-brand-600"
-                  title={item.name}
-                >
-                  <Thumb siteId={siteId} item={item} />
-                  <span className="mt-1.5 block truncate px-0.5 text-xs text-stone-600">
-                    {item.name}
-                  </span>
-                </button>
-                {item.status === 'new' && (
-                  <span className="pointer-events-none absolute top-3 left-3">
-                    <Badge tone="brand">{t('media.new')}</Badge>
-                  </span>
-                )}
-                {item.status === 'new' && (
+            {items.map((item) => {
+              const isAdded = !!multiple && added.has(item.src)
+              const isSelected = !!multiple && selected.includes(item.src)
+              return (
+                <li key={item.path} className="group relative">
                   <button
                     type="button"
-                    className="absolute top-3 right-3 rounded-md bg-white/90 p-1 text-stone-600 opacity-0 shadow group-hover:opacity-100 hover:text-red-700 focus-visible:opacity-100"
-                    title={t('media.deleteUpload')}
-                    aria-label={t('media.deleteUpload')}
-                    onClick={() => confirm(t('media.confirmDelete')) && remove.mutate(item.src)}
+                    onClick={() => choose(item.src)}
+                    disabled={isAdded}
+                    aria-pressed={multiple && !isAdded ? isSelected : undefined}
+                    className={cn(
+                      'block w-full rounded-xl border border-stone-200 p-1.5 text-left hover:border-brand-600 hover:bg-brand-50 focus-visible:border-brand-600',
+                      isSelected && 'border-brand-600 bg-brand-50 ring-2 ring-brand-600',
+                      isAdded &&
+                        'cursor-default opacity-50 hover:border-stone-200 hover:bg-transparent',
+                    )}
+                    title={item.name}
                   >
-                    <Trash2 className="size-4" />
+                    <Thumb siteId={siteId} item={item} />
+                    <span className="mt-1.5 block truncate px-0.5 text-xs text-stone-600">
+                      {isAdded ? t('media.alreadyAdded') : item.name}
+                    </span>
                   </button>
-                )}
-              </li>
-            ))}
+                  {multiple && !isAdded && (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'pointer-events-none absolute top-3 left-3 flex size-5 items-center justify-center rounded border shadow',
+                        isSelected
+                          ? 'border-brand-700 bg-brand-700 text-white'
+                          : 'border-stone-300 bg-white/90',
+                      )}
+                    >
+                      {isSelected && <Check className="size-3.5" />}
+                    </span>
+                  )}
+                  {item.status === 'new' && (
+                    <span
+                      className={cn(
+                        'pointer-events-none absolute top-3',
+                        multiple && !isAdded ? 'left-10' : 'left-3',
+                      )}
+                    >
+                      <Badge tone="brand">{t('media.new')}</Badge>
+                    </span>
+                  )}
+                  {item.status === 'new' && (
+                    <button
+                      type="button"
+                      className="absolute top-3 right-3 rounded-md bg-white/90 p-1 text-stone-600 opacity-0 shadow group-hover:opacity-100 hover:text-red-700 focus-visible:opacity-100"
+                      title={t('media.deleteUpload')}
+                      aria-label={t('media.deleteUpload')}
+                      onClick={() => confirm(t('media.confirmDelete')) && remove.mutate(item.src)}
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
@@ -251,6 +383,19 @@ export function MediaField({
   const upload = useUpload(siteId)
   const [picking, setPicking] = useState(false)
   const preview = kind === 'image' && value ? previewUrl(value, siteId, 400) : null
+  // An upload finishes after later renders: apply it through the latest handler, or not at all
+  // once the field is gone (the file stays in the library). See useMounted.
+  const mounted = useMounted()
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const uploadFile = async (file: File) => {
+    try {
+      const item = await upload.mutateAsync(file)
+      if (mounted.current) onChangeRef.current(item.src)
+    } catch {
+      // Shown through upload.error.
+    }
+  }
   const name = value.split(/[?#]/)[0]?.split('/').pop() ?? ''
 
   return (
@@ -258,7 +403,7 @@ export function MediaField({
       <DropZone
         kind={kind}
         disabled={readOnly || upload.isPending}
-        onFile={(file) => upload.mutate(file, { onSuccess: (item) => onChange(item.src) })}
+        onFile={(file) => void uploadFile(file)}
         className="rounded-xl border border-stone-200 bg-white p-3"
       >
         {(browse) => (

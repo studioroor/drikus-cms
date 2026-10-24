@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import {
   AlertCircle,
   Check,
@@ -14,11 +14,13 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EditorContext } from '@/components/editor/context'
 import { FieldList } from '@/components/editor/fields'
-import { Breadcrumbs, StatusBadge } from '@/components/editor/status'
+import { ListIdsProvider } from '@/components/editor/list-ids'
+import { Breadcrumbs, StatusBadge, statusDot, useLanguageName } from '@/components/editor/status'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Alert } from '@/components/ui/feedback'
 import { type SaveState, useAutosave } from '@/lib/autosave'
+import { cn } from '@/lib/cn'
 import {
   type CollectionInfo,
   createEntry,
@@ -27,11 +29,13 @@ import {
   deleteEntry,
   discardEntry,
   type Entry,
+  type EntryStatus,
   entryQuery,
   SINGLETON_SLUG,
   saveEntry,
   useLabel,
 } from '@/lib/content'
+import { hasListEditor } from '@/lib/list'
 import { useErrorMessage, useMe } from '@/lib/queries'
 import { PageHeader } from './app-layout'
 import { MissingCollection, siteQuery, useSiteCollection } from './site'
@@ -95,6 +99,55 @@ function MissingSummary({ collection, issues }: { collection: CollectionInfo; is
   return <Alert tone="info">{t('editor.stillRequired', { fields: labels.join(', ') })}</Alert>
 }
 
+/** One tab per language; the current one shows the live status while editing. */
+function LanguageTabs({
+  entry,
+  status,
+  busy,
+  onSelect,
+}: {
+  entry: Entry
+  status: EntryStatus
+  busy: boolean
+  onSelect: (locale: string) => void
+}) {
+  const { t } = useTranslation()
+  const languageName = useLanguageName()
+  if (!entry.locales) return null
+  return (
+    <div
+      role="tablist"
+      aria-label={t('editor.languages')}
+      className="mb-4 flex flex-wrap gap-1 border-b border-stone-200"
+    >
+      {entry.locales.map((l) => {
+        const current = l.code === entry.locale
+        const state = current ? status : l.status
+        return (
+          <button
+            key={l.code}
+            type="button"
+            role="tab"
+            aria-selected={current}
+            disabled={busy}
+            title={t(`editor.status.${state}`)}
+            onClick={() => !current && onSelect(l.code)}
+            className={cn(
+              '-mb-px inline-flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium',
+              current
+                ? 'border-brand-700 text-brand-800'
+                : 'border-transparent text-stone-500 hover:border-stone-300 hover:text-stone-800',
+            )}
+          >
+            {languageName(l.code)}
+            <span className={cn('size-2 rounded-full', statusDot[state])} />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function EntryForm({
   siteId,
   site,
@@ -118,6 +171,9 @@ function EntryForm({
   const queryClient = useQueryClient()
   const errorMessage = useErrorMessage()
   const relative = useRelativeTime()
+  const languageName = useLanguageName()
+  const locale = entry.locale ?? undefined
+  const translated = !!entry.locales
   const [data, setData] = useState<Data>(entry.data)
   const [status, setStatus] = useState(entry.status)
   const [issues, setIssues] = useState(entry.issues)
@@ -128,19 +184,28 @@ function EntryForm({
     void queryClient.invalidateQueries({ queryKey: ['sites', siteId, 'changes'] })
   }
 
-  const autosave = useAutosave((value: Data) => saveEntry(siteId, collection.name, slug, value), {
-    onSaved: (res) => {
-      setStatus(res.status)
-      setIssues(res.issues)
-      refreshLists()
+  const autosave = useAutosave(
+    (value: Data) => saveEntry(siteId, collection.name, slug, value, locale),
+    {
+      onSaved: (res) => {
+        setStatus(res.status)
+        setIssues(res.issues)
+        refreshLists()
+      },
     },
-  })
+  )
+
+  // Something of this entry is on GitHub, so it stays after discarding drafts.
+  const onGitHub =
+    !!entry.published ||
+    collection.kind === 'file' ||
+    !!entry.locales?.some((l) => l.status !== 'new' && l.status !== 'missing')
 
   const discard = useMutation({
     mutationFn: () => discardEntry(siteId, collection.name, slug),
     onSuccess: () => {
       refreshLists()
-      if (entry.published || collection.kind === 'file') onReset()
+      if (onGitHub) onReset()
       else
         void navigate({
           to: '/sites/$siteId/$collection',
@@ -176,6 +241,20 @@ function EntryForm({
       await navigate({
         to: '/sites/$siteId/$collection/history/$slug',
         params: { siteId, collection: collection.name, slug },
+        search: locale ? { locale } : {},
+      })
+    },
+  })
+
+  const goLocale = useMutation({
+    mutationFn: async (next: string) => {
+      await autosave.flush()
+      // Shared fields may have been copied to the other languages.
+      refreshLists()
+      await navigate({
+        to: '/sites/$siteId/$collection/edit/$slug',
+        params: { siteId, collection: collection.name, slug },
+        search: { locale: next },
       })
     },
   })
@@ -196,7 +275,7 @@ function EntryForm({
       : (typeof data.title === 'string' && data.title.trim()) || t('editor.untitled')
 
   return (
-    <EditorContext.Provider value={{ siteId, siteUrl, missing, readOnly: deleted }}>
+    <EditorContext.Provider value={{ siteId, siteUrl, missing, readOnly: deleted, translated }}>
       <Breadcrumbs
         items={[
           { label: t('nav.websites'), to: '/' },
@@ -214,6 +293,12 @@ function EntryForm({
         ]}
       />
       <PageHeader title={title} />
+      <LanguageTabs
+        entry={entry}
+        status={status}
+        busy={goLocale.isPending}
+        onSelect={(next) => goLocale.mutate(next)}
+      />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <StatusBadge status={status} />
         {!deleted && <SaveIndicator state={autosave.state} status={status} />}
@@ -223,13 +308,14 @@ function EntryForm({
               <Rocket className="size-4" /> {t('publish.button')}
             </Button>
           )}
-          {status !== 'published' && !deleted && (
+          {status !== 'published' && status !== 'missing' && !deleted && (
             <Button
               variant="secondary"
               size="sm"
               loading={discard.isPending}
               onClick={() => {
-                if (!confirm(t('editor.confirmDiscard'))) return
+                if (!confirm(t(translated ? 'editor.confirmDiscardAll' : 'editor.confirmDiscard')))
+                  return
                 autosave.cancel()
                 discard.mutate()
               }}
@@ -254,7 +340,8 @@ function EntryForm({
               className="text-red-700"
               loading={remove.isPending}
               onClick={() => {
-                if (!confirm(t('editor.confirmDelete'))) return
+                if (!confirm(t(translated ? 'editor.confirmDeleteAll' : 'editor.confirmDelete')))
+                  return
                 autosave.cancel()
                 remove.mutate()
               }}
@@ -266,6 +353,12 @@ function EntryForm({
       </div>
       <div className="space-y-3">
         {error && <Alert>{errorMessage(error)}</Alert>}
+        {goLocale.error && <Alert>{errorMessage(goLocale.error)}</Alert>}
+        {status === 'missing' && entry.locale && (
+          <Alert tone="info">
+            {t('editor.missingTranslation', { language: languageName(entry.locale) })}
+          </Alert>
+        )}
         {otherEditor?.updatedBy && (
           <Alert tone="info">
             {t('editor.editedBy', {
@@ -290,14 +383,16 @@ function EntryForm({
         {!deleted && <MissingSummary collection={collection} issues={issues} />}
       </div>
       <Card className="mt-4 p-5 sm:p-6">
-        <FieldList
-          fields={collection.fields}
-          value={data}
-          onChange={(next) => {
-            setData(next)
-            autosave.schedule(next)
-          }}
-        />
+        <ListIdsProvider>
+          <FieldList
+            fields={collection.fields}
+            value={data}
+            onChange={(next) => {
+              setData(next)
+              autosave.schedule(next)
+            }}
+          />
+        </ListIdsProvider>
       </Card>
     </EditorContext.Provider>
   )
@@ -309,16 +404,17 @@ export function EntryPage() {
     collection: name,
     slug,
   } = useParams({ from: '/app/sites/$siteId/$collection/edit/$slug' })
+  const { locale } = useSearch({ from: '/app/sites/$siteId/$collection/edit/$slug' })
   const { data: site } = useSuspenseQuery(siteQuery(siteId))
   const { collection } = useSiteCollection(siteId, name)
-  const { data: entry, refetch } = useSuspenseQuery(entryQuery(siteId, name, slug))
+  const { data: entry, refetch } = useSuspenseQuery(entryQuery(siteId, name, slug, locale))
   const [version, setVersion] = useState(0)
   if (!collection) return <MissingCollection />
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className={cn('mx-auto', hasListEditor(collection.fields) ? 'max-w-6xl' : 'max-w-3xl')}>
       <EntryForm
-        key={`${slug}:${version}`}
+        key={`${slug}:${entry.locale ?? ''}:${version}`}
         siteId={siteId}
         site={site}
         collection={collection}
@@ -338,17 +434,26 @@ export function NewEntryPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const errorMessage = useErrorMessage()
+  const languageName = useLanguageName()
   const { siteId, collection: name } = useParams({ from: '/app/sites/$siteId/$collection/new' })
+  const search = useSearch({ from: '/app/sites/$siteId/$collection/new' })
   const { data: site } = useSuspenseQuery(siteQuery(siteId))
-  const { collection } = useSiteCollection(siteId, name)
+  const { content, collection } = useSiteCollection(siteId, name)
+  // New entries start in the requested language, else the site's main language.
+  const locale = collection?.translated
+    ? content.i18n?.locales.includes(search.locale ?? '')
+      ? search.locale
+      : content.i18n?.main
+    : undefined
   const [data, setData] = useState<Data>(() => (collection ? defaultData(collection.fields) : {}))
   const create = useMutation({
-    mutationFn: () => createEntry(siteId, name, data),
+    mutationFn: () => createEntry(siteId, name, data, locale),
     onSuccess: async (res) => {
       await queryClient.invalidateQueries({ queryKey: ['sites', siteId] })
       await navigate({
         to: '/sites/$siteId/$collection/edit/$slug',
         params: { siteId, collection: name, slug: res.slug },
+        search: locale ? { locale } : {},
         replace: true,
       })
     },
@@ -357,7 +462,7 @@ export function NewEntryPage() {
   const collectionLabel = label(collection.label, collection.name)
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className={cn('mx-auto', hasListEditor(collection.fields) ? 'max-w-6xl' : 'max-w-3xl')}>
       <Breadcrumbs
         items={[
           { label: t('nav.websites'), to: '/' },
@@ -375,7 +480,13 @@ export function NewEntryPage() {
         subtitle={t('editor.createHint')}
       />
       <EditorContext.Provider
-        value={{ siteId, siteUrl: site.siteUrl, missing: new Set(), readOnly: false }}
+        value={{
+          siteId,
+          siteUrl: site.siteUrl,
+          missing: new Set(),
+          readOnly: false,
+          translated: !!locale,
+        }}
       >
         <form
           onSubmit={(e) => {
@@ -383,13 +494,22 @@ export function NewEntryPage() {
             create.mutate()
           }}
         >
+          {locale && (content.i18n?.locales.length ?? 0) > 1 && (
+            <div className="mb-4">
+              <Alert tone="info">
+                {t('editor.newInLanguage', { language: languageName(locale) })}
+              </Alert>
+            </div>
+          )}
           {create.error && (
             <div className="mb-4">
               <Alert>{errorMessage(create.error)}</Alert>
             </div>
           )}
           <Card className="p-5 sm:p-6">
-            <FieldList fields={collection.fields} value={data} onChange={setData} />
+            <ListIdsProvider>
+              <FieldList fields={collection.fields} value={data} onChange={setData} />
+            </ListIdsProvider>
           </Card>
           <div className="mt-4 flex justify-end">
             <Button type="submit" size="lg" loading={create.isPending}>

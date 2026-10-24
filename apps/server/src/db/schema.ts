@@ -119,6 +119,8 @@ export const drafts = sqliteTable(
     path: text('path').notNull(),
     collection: text('collection').notNull(),
     slug: text('slug').notNull(),
+    // Language of the file, for collections with one file per language.
+    locale: text('locale'),
     action: text('action', { enum: DRAFT_ACTIONS }).notNull(),
     // Structured data as edited (null for deletions).
     data: text('data', { mode: 'json' }).$type<Record<string, unknown>>(),
@@ -165,6 +167,8 @@ export type DeployState = (typeof DEPLOY_STATES)[number]
 export interface PublishedChange {
   collection: string
   slug: string
+  /** Language of the file, for translated collections. */
+  locale?: string | null
   path: string
   status: 'new' | 'modified' | 'deleted'
   title: string | null

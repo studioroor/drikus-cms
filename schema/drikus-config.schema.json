@@ -4,6 +4,27 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "i18n": {
+      "type": "object",
+      "properties": {
+        "locales": {
+          "minItems": 2,
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$"
+          }
+        },
+        "default": {
+          "type": "string",
+          "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$"
+        }
+      },
+      "required": [
+        "locales"
+      ]
+    },
     "collections": {
       "minItems": 1,
       "maxItems": 100,
@@ -60,13 +81,14 @@
           },
           "folder": {
             "type": "string",
-            "maxLength": 300,
-            "pattern": "^[A-Za-z0-9._\\-/]+$"
+            "maxLength": 300
           },
           "file": {
             "type": "string",
-            "maxLength": 300,
-            "pattern": "^[A-Za-z0-9._\\-/]+$"
+            "maxLength": 300
+          },
+          "i18n": {
+            "type": "boolean"
           },
           "format": {
             "type": "string",
@@ -268,6 +290,9 @@
         "step": {
           "type": "number",
           "exclusiveMinimum": 0
+        },
+        "i18n": {
+          "type": "boolean"
         },
         "options": {
           "maxItems": 500,

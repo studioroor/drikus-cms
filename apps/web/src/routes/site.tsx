@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { PublishDialog, PublishHistory } from '@/components/editor/publish'
-import { Breadcrumbs, StatusBadge } from '@/components/editor/status'
+import { Breadcrumbs, LocaleTag, StatusBadge } from '@/components/editor/status'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/feedback'
@@ -97,7 +97,7 @@ function PendingChanges({
         <ul className="divide-y divide-amber-100 border-t border-amber-100 text-sm">
           {changes.data.map((c) => (
             <li
-              key={`${c.collection}/${c.slug}`}
+              key={`${c.collection}/${c.slug}/${'locale' in c ? (c.locale ?? '') : ''}`}
               className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5"
             >
               {c.collection === MEDIA_COLLECTION ? (
@@ -106,11 +106,13 @@ function PendingChanges({
                 <Link
                   to="/sites/$siteId/$collection/edit/$slug"
                   params={{ siteId, collection: c.collection, slug: c.slug }}
+                  search={'locale' in c && c.locale ? { locale: c.locale } : {}}
                   className="font-medium text-stone-800 hover:text-brand-700"
                 >
                   {c.title ?? (c.slug === SINGLETON_SLUG ? collectionLabel(c.collection) : c.slug)}
                 </Link>
               )}
+              <LocaleTag locale={'locale' in c ? c.locale : null} />
               <span className="text-stone-500">{collectionLabel(c.collection)}</span>
               <StatusBadge status={c.status} />
               <span className="ml-auto text-xs text-stone-500">

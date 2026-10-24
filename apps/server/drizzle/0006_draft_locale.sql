@@ -1,0 +1,1 @@
+ALTER TABLE `drafts` ADD `locale` text;

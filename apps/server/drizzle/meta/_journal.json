@@ -43,6 +43,13 @@
       "when": 1792860392228,
       "tag": "0005_staged_media",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792862160244,
+      "tag": "0006_draft_locale",
+      "breakpoints": true
     }
   ]
 }

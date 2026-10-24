@@ -125,12 +125,13 @@ describe('processing', () => {
 
 const REPO = 1001
 
-async function world() {
+async function world(config = CONFIG, extra: Record<string, string | Buffer> = {}) {
   const gh = fakeGitHub()
   gh.addRepo(REPO, 'studioroor/bakkerij', {
-    '.drikus/config.yml': CONFIG,
+    '.drikus/config.yml': config,
     'src/content/pages/home.json': '{\n  "heading": "Welkom"\n}\n',
     '.github/workflows/deploy.yml': 'on: push\n',
+    ...extra,
   })
   gh.addRepo(1002, 'studioroor/kapper', { '.drikus/config.yml': CONFIG })
   const ctx = setup({}, githubFor(gh))
@@ -308,5 +309,43 @@ describe('media API', () => {
     await w.upload(await photo(), 'taart.png')
     await w.admin.patch(`/api/admin/sites/${w.siteId}`, { repoId: null })
     expect(w.ctx.deps.db.select().from(stagedMedia).all()).toHaveLength(0)
+  })
+})
+
+describe('media usage', () => {
+  const USAGE_CONFIG = `${CONFIG.replace('collections:\n', 'collections:\n  - name: posts\n    folder: src/content/posts\n    fields: [{ name: title }, { name: body, type: markdown }]\n')}`
+
+  test('marks library files that no content references yet', async () => {
+    const w = await world(USAGE_CONFIG, {
+      'src/content/posts/taart.md': '---\ntitle: Taart\n---\n\n![](/uploads/a.webp#right)\n',
+      'public/uploads/a.webp': await photo(10, 10),
+      'public/uploads/b.webp': await photo(12, 12),
+      // Not entries: a co-located image and files nested deeper or with another extension.
+      'src/content/posts/taart.webp': await photo(8, 8),
+      'src/content/posts/notes.txt': 'see /uploads/b.webp',
+      'src/content/posts/old/taart.md': '![](/uploads/b.webp)',
+    })
+    const used = async () => {
+      const res = await w.editor.get(`${w.base}/media`)
+      expect(res.json.complete).toBe(true)
+      return Object.fromEntries(
+        res.json.items.map((i: { name: string; used: boolean }) => [i.name, i.used]),
+      )
+    }
+    expect(await used()).toEqual({ 'a.webp': true, 'b.webp': false })
+
+    await w.editor.put(`${w.base}/collections/posts/entries/taart`, {
+      data: { title: 'Nieuw', body: '![](/uploads/b.webp)' },
+    })
+    expect(await used()).toEqual({ 'a.webp': true, 'b.webp': true })
+
+    await w.editor.post(`${w.base}/collections/posts/entries/taart/discard`)
+    expect(await used()).toEqual({ 'a.webp': true, 'b.webp': false })
+
+    const staged = await w.upload(await photo(), 'Vers.png')
+    const fresh = (await w.editor.get(`${w.base}/media`)).json.items.find(
+      (i: { src: string }) => i.src === staged.json.item.src,
+    )
+    expect(fresh.used).toBe(false)
   })
 })
