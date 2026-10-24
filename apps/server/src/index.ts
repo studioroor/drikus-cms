@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path'
 import { serveStatic } from 'hono/bun'
 import { createApp } from './app'
 import { bootstrap, ensureSetupLink } from './bootstrap'
+import { backupSettings, startBackupSchedule } from './lib/backup'
 
 const { env, deps } = bootstrap()
 const app = createApp(deps)
@@ -38,6 +39,14 @@ if (deps.github) {
   console.log(
     'GitHub App not configured (set GITHUB_APP_ID); sites cannot be linked to repositories yet.',
   )
+}
+
+const backups = backupSettings(env)
+if (backups.keep > 0) {
+  console.log(`Daily backups in ${backups.dir} (keeping ${backups.keep}).`)
+  startBackupSchedule(deps.db, backups)
+} else {
+  console.log('Scheduled backups are off (BACKUP_KEEP=0).')
 }
 
 const server = Bun.serve({ port: env.PORT, fetch: app.fetch })

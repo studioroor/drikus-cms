@@ -9,6 +9,8 @@ Drikus CMS manages its own users and writes to repositories through a single Git
 
 The full design and roadmap is in [`docs/plan.md`](docs/plan.md).
 How to describe a site's content is in [`docs/content-config.md`](docs/content-config.md).
+Adding a client site, step by step: [`docs/onboarding.md`](docs/onboarding.md), starting from the
+[Astro starter](examples/astro-starter).
 
 ## Status
 
@@ -21,6 +23,7 @@ How to describe a site's content is in [`docs/content-config.md`](docs/content-c
 | 4     | Drafts → one-commit publish, deploy status                                            | ✅    |
 | 5     | Media uploads                                                                         | ✅    |
 | 6     | Multilingual content                                                                  | ✅    |
+| 7     | Ops & docs: Fly.io/Synology deploy, daily backups, Astro starter, onboarding guide    | ✅    |
 
 ## Stack
 
@@ -33,7 +36,8 @@ How to describe a site's content is in [`docs/content-config.md`](docs/content-c
 apps/server   Hono API, auth, admin CLI, serves the built SPA
 apps/web      React SPA (admin + editor UI)
 deploy/       docker-compose (Synology) and fly.toml
-docs/         design plan
+docs/         design plan, content configuration, onboarding
+examples/     Astro starter site for new clients
 ```
 
 ## Development
@@ -64,6 +68,7 @@ The image is published to `ghcr.io/studioroor/drikus-cms` by CI on every push to
 (amd64 and arm64). Everything that must persist lives in `/data`:
 - `drikus.db` is the SQLite database.
 - `secret.key` encrypts secrets such as 2FA seeds. **Back it up together with the database.**
+- `backups/` holds the daily snapshots (see [Backups](#backups)).
 
 | Variable                      | Default                      |                                                                    |
 | ----------------------------- | ---------------------------- | ------------------------------------------------------------------ |
@@ -73,6 +78,8 @@ The image is published to `ghcr.io/studioroor/drikus-cms` by CI on every push to
 | `TRUST_PROXY`                 | `false`                      | Set `true` behind a reverse proxy so rate limiting sees client IPs |
 | `SECRET_KEY`                  | generated                    | Optional base64 32-byte key instead of `secret.key`                |
 | `REQUIRE_ADMIN_2FA`           | `true`                       | Set `false` to make two-step verification optional for superadmins |
+| `BACKUP_KEEP`                 | `7`                          | Daily database snapshots to keep; `0` turns them off               |
+| `BACKUP_DIR`                  | `$DATA_DIR/backups`          | Where the snapshots go                                             |
 | `GITHUB_APP_ID`               | unset                        | Enables the GitHub integration                                     |
 | `GITHUB_APP_PRIVATE_KEY_FILE` | `$DATA_DIR/github-app.pem`   | Private key of the GitHub App                                      |
 | `GITHUB_APP_PRIVATE_KEY`      | unset                        | Alternative: the key as PEM text or base64 (e.g. for Fly secrets)  |
@@ -86,7 +93,35 @@ Manager project, set `PUBLIC_URL`, and point a reverse proxy rule (with HTTPS) a
 with one volume, because SQLite is a single file.
 
 **Admin CLI in Docker:** `docker exec -it drikus-cms drikus help`. It can create admins, print
-invite/reset links, reset 2FA, and enable or disable users.
+invite/reset links, reset 2FA, enable or disable users, and make or list backups.
+
+## Backups
+
+The website content is safe in Git. The CMS database holds what isn't: accounts, 2FA seeds,
+memberships, drafts that haven't been published, uploads waiting for the next publish, and the
+publish history.
+
+Once a day the CMS writes a **snapshot** of the database to `/data/backups`
+(`drikus-<date>T<time>Z.db`, the last 7 by default, see `BACKUP_KEEP`). A snapshot is a complete
+SQLite file, made safely while the CMS runs. `backups/secret.key` is a copy of the key the 2FA seeds
+are encrypted with (not when the key comes from `SECRET_KEY`; keep that one yourself). Make one
+right away with `drikus backup`, and list them with `drikus backups`.
+
+Copy the snapshots somewhere else:
+- **Synology:** add the project's `data/backups` folder to a **Hyper Backup** task (to another NAS,
+  a USB disk or C2). Back up `backups/`, not the live `drikus.db`: a copy of a database that's being
+  written can be broken.
+- **Fly.io:** volumes get daily snapshots (`fly volumes snapshots list <volume>`). For a copy off
+  Fly: `fly ssh sftp get /data/backups/<file> -c deploy/fly.toml`.
+
+**Restore:**
+1. Stop the CMS.
+2. Copy the snapshot over `data/drikus.db`, and delete `drikus.db-wal` and `drikus.db-shm` if they
+   exist.
+3. Make sure `data/secret.key` is the key from the same backup.
+4. Start the CMS. Migrations bring an older snapshot up to date.
+
+Drafts and uploads made after the snapshot are lost. Published content is in Git and isn't affected.
 
 ## GitHub App setup
 

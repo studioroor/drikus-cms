@@ -1,0 +1,63 @@
+---
+import { renderMarkdown } from '../lib'
+
+// The blocks of a page, as edited under "Onderdelen" in the CMS.
+type Section =
+  | { type: 'hero'; heading: string; text?: string; image?: string }
+  | { type: 'text'; heading?: string; body?: string }
+  | { type: 'faq'; heading?: string; items?: { q: string; a?: string }[] }
+
+interface Props {
+  sections: Section[]
+}
+const { sections } = Astro.props
+---
+
+{
+  sections.map((s) => {
+    if (s.type === 'hero')
+      return (
+        <section class="hero">
+          {s.image && <img src={s.image} alt="" />}
+          <h1>{s.heading}</h1>
+          {s.text && <p>{s.text}</p>}
+        </section>
+      )
+    if (s.type === 'text')
+      return (
+        <section>
+          {s.heading && <h2>{s.heading}</h2>}
+          <Fragment set:html={renderMarkdown(s.body)} />
+        </section>
+      )
+    if (s.type === 'faq')
+      return (
+        <section>
+          {s.heading && <h2>{s.heading}</h2>}
+          {(s.items ?? []).map((item) => (
+            <details>
+              <summary>{item.q}</summary>
+              <p>{item.a}</p>
+            </details>
+          ))}
+        </section>
+      )
+    return null
+  })
+}
+
+<style>
+  .hero h1 {
+    font-size: 2.25rem;
+    line-height: 1.2;
+    margin-bottom: 0.5rem;
+  }
+  details {
+    border-bottom: 1px solid #e7e5e4;
+    padding: 0.5rem 0;
+  }
+  summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+</style>

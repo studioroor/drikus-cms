@@ -4,3 +4,4 @@ data
 .git
 *.db*
 .env*
+examples

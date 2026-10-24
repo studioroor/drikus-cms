@@ -1,0 +1,23 @@
+{
+  "title": "Bakkerij Jansen",
+  "sections": [
+    {
+      "type": "hero",
+      "heading": "Vers brood, elke dag",
+      "text": "Sinds 1952 bakken we in Delft brood, taart en koekjes met de hand."
+    },
+    {
+      "type": "text",
+      "heading": "Over ons",
+      "body": "We gebruiken **biologisch meel** en geen kant-en-klare mixen."
+    },
+    {
+      "type": "faq",
+      "heading": "Veelgestelde vragen",
+      "items": [
+        { "q": "Kan ik een taart bestellen?", "a": "Ja, bel ons minstens twee dagen van tevoren." },
+        { "q": "Zijn jullie op zondag open?", "a": "Nee, op zondag zijn we dicht." }
+      ]
+    }
+  ]
+}

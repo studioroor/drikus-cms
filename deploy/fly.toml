@@ -3,6 +3,7 @@
 # GitHub App secrets: `fly secrets set GITHUB_APP_ID=… GITHUB_WEBHOOK_SECRET=…`
 # and `fly secrets set GITHUB_APP_PRIVATE_KEY="$(base64 < github-app.pem | tr -d '\n')"`.
 # Admin CLI: `fly ssh console -c deploy/fly.toml -C "drikus help"`.
+# Daily database snapshots go to /data/backups (BACKUP_KEEP, default 7); see README → Backups.
 app = "drikus-cms"
 primary_region = "ams"
 

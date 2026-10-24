@@ -1,0 +1,96 @@
+---
+import settings from '../data/settings.json'
+
+interface Props {
+  title: string
+}
+const { title } = Astro.props
+const pageTitle = title === settings.name ? title : `${title} – ${settings.name}`
+---
+
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>{pageTitle}</title>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/">{settings.name}</a>
+      <nav><a href="/nieuws/">Nieuws</a></nav>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer>
+      <p>
+        {settings.name}
+        {settings.address?.street && <> · {settings.address.street}, {settings.address.city}</>}
+      </p>
+      <p>
+        {settings.phone && <a href={`tel:${settings.phone.replace(/[^\d+]/g, '')}`}>{settings.phone}</a>}
+        {settings.email && <> · <a href={`mailto:${settings.email}`}>{settings.email}</a></>}
+      </p>
+      {
+        settings.hours?.length > 0 && (
+          <ul class="hours">
+            {settings.hours.map((h) => (
+              <li>
+                {h.days}: {h.time}
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </footer>
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    --brand: #b45309;
+    font-family: system-ui, sans-serif;
+    color: #1c1917;
+    background: #fafaf9;
+    line-height: 1.6;
+  }
+  body {
+    margin: 0;
+  }
+  header,
+  main,
+  footer {
+    max-width: 48rem;
+    margin: 0 auto;
+    padding: 1.25rem;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  a {
+    color: var(--brand);
+  }
+  .brand {
+    font-weight: 700;
+    text-decoration: none;
+    font-size: 1.25rem;
+  }
+  img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+  }
+  footer {
+    color: #57534e;
+    font-size: 0.9rem;
+    border-top: 1px solid #e7e5e4;
+  }
+  .hours {
+    list-style: none;
+    padding: 0;
+  }
+</style>

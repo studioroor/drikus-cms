@@ -22,6 +22,20 @@ jobs:
       - run: bun test
       - run: bun run build
 
+  # The example site for new clients must keep building.
+  starter:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/astro-starter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+
   image:
     needs: check
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

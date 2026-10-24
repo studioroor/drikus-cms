@@ -1,0 +1,12 @@
+---
+import PostList from '../../components/PostList.astro'
+import Layout from '../../layouts/Layout.astro'
+import { publishedPosts } from '../../posts'
+
+const posts = await publishedPosts()
+---
+
+<Layout title="Nieuws">
+  <h1>Nieuws</h1>
+  {posts.length ? <PostList posts={posts} /> : <p>Nog geen berichten.</p>}
+</Layout>

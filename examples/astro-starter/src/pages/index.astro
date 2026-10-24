@@ -1,0 +1,21 @@
+---
+import PostList from '../components/PostList.astro'
+import Sections from '../components/Sections.astro'
+import home from '../content/pages/home.json'
+import Layout from '../layouts/Layout.astro'
+import { publishedPosts } from '../posts'
+
+const latest = (await publishedPosts()).slice(0, 3)
+---
+
+<Layout title={home.title}>
+  <Sections sections={home.sections as never} />
+  {
+    latest.length > 0 && (
+      <section>
+        <h2>Nieuws</h2>
+        <PostList posts={latest} />
+      </section>
+    )
+  }
+</Layout>
