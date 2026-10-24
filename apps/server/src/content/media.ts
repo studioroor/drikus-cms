@@ -202,7 +202,13 @@ export interface MediaItem {
   status: 'new' | 'published'
   uploadedAt: number | null
   uploadedBy: string | null
+  /** Whether any published file or pending draft of a collection mentions this file. */
+  used: boolean
 }
+
+/** Which srcs content mentions, per site, head commit and latest draft change. */
+const usageCache = new Map<string, Map<string, boolean>>()
+const MAX_USAGE_KEYS = 50
 
 /** Small cache of generated thumbnails, by blob SHA and width. */
 const thumbs = new Map<string, Buffer>()
@@ -255,7 +261,53 @@ export class MediaService {
     )
   }
 
-  async list(): Promise<{ settings: MediaSettings; items: MediaItem[] }> {
+  /** The subset of `srcs` that appears in a collection's published file or pending draft. */
+  async usage(srcs: string[]): Promise<Set<string>> {
+    const site = this.content.site
+    const head = await this.content.sync.head(site)
+    const drafts = this.content.drafts()
+    const latest = drafts.reduce((max, d) => Math.max(max, d.updatedAt?.getTime() ?? 0), 0)
+    const key = `${site.id}:${head.commitSha}:${latest}`
+    let known = usageCache.get(key)
+    if (!known) {
+      known = new Map()
+      usageCache.set(key, known)
+      if (usageCache.size > MAX_USAGE_KEYS)
+        usageCache.delete(usageCache.keys().next().value as string)
+    }
+    const missing = srcs.filter((s) => !known.has(s))
+    if (missing.length) {
+      const texts = await this.#contentTexts(drafts)
+      for (const src of missing)
+        known.set(
+          src,
+          texts.some((t) => t.includes(src)),
+        )
+    }
+    return new Set(srcs.filter((s) => known.get(s)))
+  }
+
+  /** Text of every published collection file (minus deleted ones) plus every upsert draft. */
+  async #contentTexts(drafts: ReturnType<ContentService['drafts']>): Promise<string[]> {
+    const config = await this.content.config()
+    const files = await this.content.files()
+    const owned = (path: string) =>
+      config.collections.some((c) => (c.folder ? path.startsWith(`${c.folder}/`) : path === c.file))
+    const paths = [...files.keys()].filter(owned)
+    const texts: string[] = []
+    const queue = [...paths]
+    const worker = async () => {
+      for (let p = queue.shift(); p; p = queue.shift()) {
+        const sha = files.get(p) as string
+        texts.push((await this.content.sync.blob(this.content.site, sha)).toString('utf8'))
+      }
+    }
+    await Promise.all(Array.from({ length: 8 }, worker))
+    for (const d of drafts) if (d.action !== 'delete' && d.content) texts.push(d.content)
+    return texts
+  }
+
+  async list(): Promise<{ settings: MediaSettings; items: MediaItem[]; complete: boolean }> {
     const settings = await this.settings()
     const head = await this.content.sync.head(this.content.site)
     const tree = await this.content.sync.tree(this.content.site, head.treeSha)
@@ -275,6 +327,7 @@ export class MediaService {
       status: 'new' as const,
       uploadedAt: m.createdAt.getTime(),
       uploadedBy: m.uploadedBy ? (names.get(m.uploadedBy) ?? null) : null,
+      used: false,
     }))
     const stagedPaths = new Set(items.map((i) => i.path))
     for (const entry of tree.entries) {
@@ -290,12 +343,15 @@ export class MediaService {
         status: 'published',
         uploadedAt: null,
         uploadedBy: null,
+        used: false,
       })
     }
+    const used = await this.usage(items.map((i) => i.src))
+    for (const item of items) item.used = used.has(item.src)
     items.sort((a, b) =>
       a.status !== b.status ? (a.status === 'new' ? -1 : 1) : a.name.localeCompare(b.name),
     )
-    return { settings, items }
+    return { settings, items, complete: !tree.truncated }
   }
 
   async upload(file: File, userId: string): Promise<MediaItem> {
@@ -316,6 +372,7 @@ export class MediaService {
       status: 'new',
       uploadedAt: Date.now(),
       uploadedBy: null,
+      used: false,
     }
     // The same file is already on GitHub: nothing to stage.
     if ((await this.content.files()).get(path) === gitBlobSha(processed.bytes)) {

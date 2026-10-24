@@ -165,6 +165,8 @@ export const nl = {
     empty: 'Er staan nog geen bestanden in de bibliotheek.',
     noResults: 'Niets gevonden.',
     search: 'Zoeken…',
+    notUsed: 'Nog niet gebruikt',
+    incomplete: 'Niet alle bestanden konden worden getoond (zeer grote repository).',
     new: 'Nieuw',
     deleteUpload: 'Upload verwijderen',
     confirmDelete: 'Deze upload verwijderen? Hij is nog niet gepubliceerd.',

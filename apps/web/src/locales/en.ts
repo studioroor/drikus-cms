@@ -164,6 +164,8 @@ export const en: Messages = {
     empty: 'There are no files in the library yet.',
     noResults: 'Nothing found.',
     search: 'Search…',
+    notUsed: 'Not used yet',
+    incomplete: 'Not every file could be listed (very large repository).',
     new: 'New',
     deleteUpload: 'Delete upload',
     confirmDelete: "Delete this upload? It hasn't been published yet.",

@@ -96,7 +96,9 @@ What a hint does is up to your site; the CMS only writes it into the path.
 ## Images and files
 
 Editors upload images and files from any `image` or `file` field (click or drag and drop), from
-the image button in rich text, or pick earlier uploads from the **media library**.
+the image button in rich text, or pick earlier uploads from the **media library**. Tick **Not used yet** in the library to see
+files that no collection file or pending draft mentions. Very large repositories may list only
+part of their files; the library says so.
 
 ```yaml
 media:

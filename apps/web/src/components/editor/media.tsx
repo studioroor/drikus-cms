@@ -139,6 +139,7 @@ export function MediaPicker({
   const library = useQuery({ ...mediaQuery(siteId), enabled: open })
   const upload = useUpload(siteId)
   const [search, setSearch] = useState('')
+  const [unusedOnly, setUnusedOnly] = useState(false)
   const remove = useMutation({
     mutationFn: (src: string) => removeMedia(siteId, src),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sites', siteId] }),
@@ -180,6 +181,7 @@ export function MediaPicker({
   const items = (library.data?.items ?? [])
     .filter((i) => kind === 'file' || i.kind === 'image')
     .filter((i) => !term || i.name.toLowerCase().includes(term))
+    .filter((i) => !unusedOnly || !i.used)
 
   return (
     <Dialog
@@ -237,16 +239,28 @@ export function MediaPicker({
         {upload.error && <Alert>{errorMessage(upload.error)}</Alert>}
         {remove.error && <Alert>{errorMessage(remove.error)}</Alert>}
 
+        {library.data?.complete === false && <Alert tone="info">{t('media.incomplete')}</Alert>}
+
         {(library.data?.items.length ?? 0) > 8 && (
-          <div className="relative">
-            <Search className="absolute top-3.5 left-3 size-4 text-stone-400" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('media.search')}
-              aria-label={t('media.search')}
-              className="pl-9"
-            />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative min-w-48 flex-1">
+              <Search className="absolute top-3.5 left-3 size-4 text-stone-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('media.search')}
+                aria-label={t('media.search')}
+                className="pl-9"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-stone-700">
+              <input
+                type="checkbox"
+                checked={unusedOnly}
+                onChange={(e) => setUnusedOnly(e.target.checked)}
+              />
+              {t('media.notUsed')}
+            </label>
           </div>
         )}
 
