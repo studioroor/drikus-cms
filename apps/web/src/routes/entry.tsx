@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { AlertCircle, Check, CloudUpload, Loader2, RotateCcw, Trash2 } from 'lucide-react'
+import { AlertCircle, Check, CloudUpload, Loader2, Rocket, RotateCcw, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EditorContext } from '@/components/editor/context'
@@ -152,6 +152,14 @@ function EntryForm({
     },
   })
 
+  // Save what's typed before opening the publish dialog, so it's included.
+  const goPublish = useMutation({
+    mutationFn: async () => {
+      await autosave.flush()
+      await navigate({ to: '/sites/$siteId', params: { siteId }, search: { publish: true } })
+    },
+  })
+
   const missing = useMemo(
     () => new Set(issues.filter((i) => i.code === 'required').map((i) => i.path)),
     [issues],
@@ -189,7 +197,12 @@ function EntryForm({
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <StatusBadge status={status} />
         {!deleted && <SaveIndicator state={autosave.state} status={status} />}
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap gap-2">
+          {status !== 'published' && (
+            <Button size="sm" loading={goPublish.isPending} onClick={() => goPublish.mutate()}>
+              <Rocket className="size-4" /> {t('publish.button')}
+            </Button>
+          )}
           {status !== 'published' && !deleted && (
             <Button
               variant="secondary"

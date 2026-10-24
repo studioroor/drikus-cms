@@ -81,8 +81,28 @@ image), list the hints as `imageStyles` and editors can pick one per image:
 
 What a hint does is up to your site; the CMS only writes it into the path.
 
-## Drafts
+## Drafts and publishing
 
-Changes are saved automatically as **drafts** in the CMS database while an editor types. Nothing
-reaches GitHub yet. Drafts are shared per file: if two people edit the same page, the last save
-wins and the page shows who edited it last. Publishing all drafts as one commit is phase 4.
+Changes are saved automatically as **drafts** in the CMS database while an editor types. Drafts
+are shared per file: if two people edit the same page, the last save wins and the page shows who
+edited it last.
+
+**Publish** (on the site page, or from any changed page) puts all drafts of the site live in
+**one commit** on the configured branch:
+- The commit is created with the Git Data API, on top of the branch's current head, and the branch
+  is moved without force. If someone pushed in the meantime, the CMS rebuilds the commit on the new
+  head (up to three times).
+- The commit author is the editor's name; the message lists the changed files and ends with a
+  `Drikus-CMS-User:` trailer.
+- Publishing is blocked until every change is ready:
+  - **Required fields** must be filled in.
+  - **Conflicts**: if a file changed on GitHub after the draft was started, the editor chooses
+    _Use my version_ (overwrite) or _Keep the other version_ (drop the draft).
+  - Drafts that no longer match the config (a collection was renamed or removed) can be discarded.
+- Edits saved while a publish is running stay as drafts, on top of what was just published.
+
+After publishing, the CMS follows the commit's **check runs and commit statuses** (GitHub Actions,
+Cloudflare Pages, Netlify, …) and shows _updating the website…_, _live_ or _failed_. If a repository
+has no checks at all, it shows _published_ after a few minutes. This needs the GitHub App's
+_Checks_ and _Commit statuses_ read permissions; without them the deploy state is simply unknown.
+Superadmins see links to the commits in the publish history.
