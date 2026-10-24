@@ -184,6 +184,8 @@ export const en: Messages = {
     addPhotos: 'Add photos',
     add: 'Add',
     removeN: 'Remove {{count}}',
+    moveLeft: 'Move left',
+    moveRight: 'Move right',
     moveStart: 'Move to start',
     moveEnd: 'Move to end',
     selected: '{{count}} selected',

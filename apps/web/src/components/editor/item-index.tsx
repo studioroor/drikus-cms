@@ -3,7 +3,7 @@ import {
   DndContext,
   type DragEndEvent,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
@@ -74,7 +74,9 @@ export function ItemIndex({
 }) {
   const { readOnly, missing } = useEditor()
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Mouse and touch apart: a pointer sensor claims touches too, which the page's panning
+    // then cancels. Touch drags start after a short press so scrolling still works.
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )

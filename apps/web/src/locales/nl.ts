@@ -185,6 +185,8 @@ export const nl = {
     addPhotos: "Foto's toevoegen",
     add: 'Toevoegen',
     removeN: '{{count}} weghalen',
+    moveLeft: 'Naar links',
+    moveRight: 'Naar rechts',
     moveStart: 'Naar het begin',
     moveEnd: 'Naar het eind',
     selected: '{{count}} geselecteerd',

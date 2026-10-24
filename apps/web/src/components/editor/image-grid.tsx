@@ -3,7 +3,7 @@ import {
   DndContext,
   type DragEndEvent,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
@@ -50,7 +50,9 @@ export function ImageGrid({
   const idsFor = useListIdsFor()
   const upload = useUpload(siteId)
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Mouse and touch apart: a pointer sensor claims touches too, which the page's panning
+    // then cancels. Touch drags start after a short press so scrolling still works.
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
@@ -217,16 +219,14 @@ export function ImageGrid({
                           selecting={selecting}
                           checked={checked.has(id)}
                           menuOpen={menu === id}
-                          isFirst={i === 0}
-                          isLast={i === value.length - 1}
+                          count={value.length}
                           onClick={() =>
                             selecting ? toggle(id) : setMenu(menu === id ? null : id)
                           }
                           onCloseMenu={() => setMenu(null)}
                           onReplace={() => setPicking(i)}
                           onRemove={() => removeAt(i)}
-                          onMoveStart={() => moveTo(i, 0)}
-                          onMoveEnd={() => moveTo(i, value.length - 1)}
+                          onMove={(to) => moveTo(i, to)}
                         />
                       )
                     })}
@@ -300,14 +300,12 @@ function Tile({
   selecting,
   checked,
   menuOpen,
-  isFirst,
-  isLast,
+  count,
   onClick,
   onCloseMenu,
   onReplace,
   onRemove,
-  onMoveStart,
-  onMoveEnd,
+  onMove,
 }: {
   id: string
   index: number
@@ -316,14 +314,13 @@ function Tile({
   selecting: boolean
   checked: boolean
   menuOpen: boolean
-  isFirst: boolean
-  isLast: boolean
+  count: number
   onClick: () => void
   onCloseMenu: () => void
   onReplace: () => void
   onRemove: () => void
-  onMoveStart: () => void
-  onMoveEnd: () => void
+  /** Moves the photo to this index. */
+  onMove: (to: number) => void
 }) {
   const { t } = useTranslation()
   const { siteId } = useEditor()
@@ -353,6 +350,13 @@ function Tile({
     onCloseMenu()
     action()
   }
+  const last = count - 1
+  const moves = [
+    { label: t('media.moveLeft'), to: index - 1, show: index > 0 },
+    { label: t('media.moveRight'), to: index + 1, show: index < last },
+    { label: t('media.moveStart'), to: 0, show: index > 0 },
+    { label: t('media.moveEnd'), to: last, show: index < last },
+  ].filter((m) => m.show)
   const menuItem = 'block w-full px-3 py-1.5 text-left text-sm hover:bg-stone-100'
 
   return (
@@ -403,7 +407,7 @@ function Tile({
           <button
             type="button"
             ref={setActivatorNodeRef}
-            className="absolute top-1 left-1 cursor-grab touch-none rounded-md bg-white/90 p-0.5 text-stone-600 opacity-0 shadow group-hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
+            className="absolute top-1 left-1 cursor-grab touch-none rounded-md bg-white/90 p-0.5 text-stone-600 opacity-0 shadow group-hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing [@media(hover:none)]:opacity-100"
             title={t('media.reorder')}
             {...attributes}
             aria-label={t('media.reorder')}
@@ -449,21 +453,17 @@ function Tile({
             >
               {t('media.remove')}
             </button>
-            {!isFirst && (
+            {moves.map((m) => (
               <button
+                key={m.label}
                 type="button"
                 role="menuitem"
                 className={menuItem}
-                onClick={item(onMoveStart)}
+                onClick={item(() => onMove(m.to))}
               >
-                {t('media.moveStart')}
+                {m.label}
               </button>
-            )}
-            {!isLast && (
-              <button type="button" role="menuitem" className={menuItem} onClick={item(onMoveEnd)}>
-                {t('media.moveEnd')}
-              </button>
-            )}
+            ))}
           </div>
         </>
       )}
