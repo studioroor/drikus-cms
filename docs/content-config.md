@@ -14,6 +14,17 @@ A complete example is in [`examples/astro-bakery.config.yml`](examples/astro-bak
 If the file has errors, superadmins see them on the site's page in the CMS. Editors just see that
 the site isn't ready for editing yet.
 
+## Site icon
+
+The CMS shows each site with its favicon or logo from the repository. It looks for the usual
+files, such as `favicon.svg`, `icon.svg`, `apple-touch-icon.png`, `favicon.png`, `logo.svg` and
+`favicon.ico`. It prefers files in `public/`, `static/`, `app/` or `assets/` and skips
+`node_modules`, `dist` and other build folders. If it picks the wrong file, name the right one:
+
+```yaml
+icon: src/assets/brand/mark.svg
+```
+
 ## Collections
 
 | Key                    |              |                                                                                                                   |

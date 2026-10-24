@@ -6,6 +6,7 @@ import type { LinkedSite, SiteSync } from '../github/sync'
 import { type Collection, type Config, type ConfigIssue, parseConfig } from './config'
 import { checkFields, entryTitle, type FieldIssue } from './fields'
 import { type Data, parseDocument, serializeDocument } from './format'
+import { findSiteIcon, iconType, MAX_ICON_BYTES } from './icon'
 import { entryPathFor, renderSlug, SINGLETON_SLUG, slugForPath } from './paths'
 
 export const CONFIG_PATHS = ['.drikus/config.yml', '.drikus/config.yaml', '.drikus/config.json']
@@ -108,6 +109,25 @@ export class ContentService {
     return result.ok
       ? { status: 'ok', config: result.config, path }
       : { status: 'invalid_config', path, issues: result.issues }
+  }
+
+  /**
+   * The site's icon at the current head: the config's `icon` when it points at
+   * an image, otherwise the best guess from the repository's files.
+   */
+  async icon(): Promise<{ sha: string; type: string } | null> {
+    const head = await this.sync.head(this.site)
+    const { entries } = await this.sync.tree(this.site, head.treeSha)
+    const state = await this.configState()
+    const configured =
+      state.status === 'ok' && state.config.icon
+        ? entries.find((e) => e.type === 'blob' && e.path === state.config.icon)
+        : undefined
+    const entry =
+      configured && iconType(configured.path) && (configured.size ?? 0) <= MAX_ICON_BYTES
+        ? configured
+        : findSiteIcon(entries)
+    return entry ? { sha: entry.sha, type: iconType(entry.path) as string } : null
   }
 
   async config(): Promise<Config> {

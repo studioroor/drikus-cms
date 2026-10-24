@@ -117,6 +117,25 @@ export const contentRoutes = new Hono<ContentEnv>()
       }
     }),
   )
+  .get('/icon', async (c) => {
+    const content = c.var.content
+    if (!content) return c.json({ error: 'not_found' as const }, 404)
+    try {
+      const icon = await content.icon()
+      if (!icon) return c.json({ error: 'not_found' as const }, 404)
+      // Blobs are content-addressed, so the SHA is a perfect ETag.
+      const etag = `"${icon.sha}"`
+      c.header('cache-control', 'private, max-age=300')
+      c.header('etag', etag)
+      if (c.req.header('if-none-match') === etag) return c.body(null, 304)
+      const bytes = await content.sync.blob(content.site, icon.sha)
+      c.header('content-type', icon.type)
+      return c.body(new Uint8Array(bytes))
+    } catch (err) {
+      if (err instanceof GitHubError) return c.json({ error: githubFailure(err).error }, 502)
+      throw err
+    }
+  })
   .get('/changes', (c) => handle(c, async () => ({ changes: requireContent(c).changes() })))
   .get('/collections/:collection/entries', validate('param', CollectionParam), (c) =>
     handle(c, async () => ({

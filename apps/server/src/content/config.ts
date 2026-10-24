@@ -129,6 +129,8 @@ export const CollectionSchema = z.object({
 export const ConfigSchema = z.object({
   collections: z.array(CollectionSchema).min(1).max(100),
   media: z.object({ folder: RepoPath, publicPath: z.string().max(300).optional() }).optional(),
+  /** Image shown for the site in the CMS; found automatically when omitted. */
+  icon: RepoPath.optional(),
 })
 
 export type Field = z.infer<typeof FieldSchema>

@@ -2,6 +2,7 @@ import { useSuspenseQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { ExternalLink, Globe, PencilLine } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { SiteIcon } from '@/components/site-icon'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/feedback'
 import { mySitesQuery, useMe } from '@/lib/queries'
@@ -29,9 +30,7 @@ export function HomePage() {
           {sites.map((site) => (
             <Card key={site.id} className="flex flex-col p-5 transition-shadow hover:shadow-md">
               <div className="mb-4 flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
-                  <Globe className="size-5" />
-                </div>
+                <SiteIcon siteId={site.id} />
                 <div className="min-w-0">
                   <h2 className="truncate font-semibold">{site.name}</h2>
                   {site.siteUrl && (
