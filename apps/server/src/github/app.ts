@@ -22,8 +22,8 @@ export interface RepoInfo {
 
 export interface TreeChange {
   path: string
-  /** New file content, or null to delete the file. */
-  content: string | null
+  /** New text content, binary content (uploads), or null to delete the file. */
+  content: string | Buffer | null
 }
 
 export interface CommitCheck {
@@ -349,14 +349,34 @@ export class RepoClient {
   }
 
   /** Creates a tree on top of `baseTree`. Entries with `content: null` delete that path. */
+  /** Uploads binary content as a blob and returns its SHA. */
+  async createBlob(fullName: string, bytes: Buffer): Promise<string> {
+    const res = await this.#send<{ sha: string }>(`/repos/${fullName}/git/blobs`, 'POST', {
+      content: bytes.toString('base64'),
+      encoding: 'base64',
+    })
+    return res.sha
+  }
+
   async createTree(fullName: string, baseTree: string, changes: TreeChange[]): Promise<string> {
+    // Text goes inline in the tree; binary files must be uploaded as blobs first.
+    const entries = []
+    for (const c of changes) {
+      if (c.content === null)
+        entries.push({ path: c.path, mode: '100644', type: 'blob', sha: null })
+      else if (typeof c.content === 'string')
+        entries.push({ path: c.path, mode: '100644', type: 'blob', content: c.content })
+      else
+        entries.push({
+          path: c.path,
+          mode: '100644',
+          type: 'blob',
+          sha: await this.createBlob(fullName, c.content),
+        })
+    }
     const res = await this.#send<{ sha: string }>(`/repos/${fullName}/git/trees`, 'POST', {
       base_tree: baseTree,
-      tree: changes.map((c) =>
-        c.content === null
-          ? { path: c.path, mode: '100644', type: 'blob', sha: null }
-          : { path: c.path, mode: '100644', type: 'blob', content: c.content },
-      ),
+      tree: entries,
     })
     return res.sha
   }

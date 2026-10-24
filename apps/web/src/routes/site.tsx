@@ -18,6 +18,7 @@ import { EmptyState } from '@/components/ui/feedback'
 import { api, unwrap } from '@/lib/api'
 import {
   changesQuery,
+  MEDIA_COLLECTION,
   SINGLETON_SLUG,
   type SiteContent,
   siteContentQuery,
@@ -76,6 +77,7 @@ function PendingChanges({
   const changes = useQuery({ ...changesQuery(siteId), enabled: count > 0 })
   if (count === 0) return null
   const collectionLabel = (name: string) => {
+    if (name === MEDIA_COLLECTION) return t('media.label')
     const c = content.collections.find((x) => x.name === name)
     return c ? label(c.label, c.name) : name
   }
@@ -98,13 +100,17 @@ function PendingChanges({
               key={`${c.collection}/${c.slug}`}
               className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5"
             >
-              <Link
-                to="/sites/$siteId/$collection/edit/$slug"
-                params={{ siteId, collection: c.collection, slug: c.slug }}
-                className="font-medium text-stone-800 hover:text-brand-700"
-              >
-                {c.title ?? (c.slug === SINGLETON_SLUG ? collectionLabel(c.collection) : c.slug)}
-              </Link>
+              {c.collection === MEDIA_COLLECTION ? (
+                <span className="font-medium text-stone-800">{c.title ?? c.slug}</span>
+              ) : (
+                <Link
+                  to="/sites/$siteId/$collection/edit/$slug"
+                  params={{ siteId, collection: c.collection, slug: c.slug }}
+                  className="font-medium text-stone-800 hover:text-brand-700"
+                >
+                  {c.title ?? (c.slug === SINGLETON_SLUG ? collectionLabel(c.collection) : c.slug)}
+                </Link>
+              )}
               <span className="text-stone-500">{collectionLabel(c.collection)}</span>
               <StatusBadge status={c.status} />
               <span className="ml-auto text-xs text-stone-500">

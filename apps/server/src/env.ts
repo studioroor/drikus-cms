@@ -35,6 +35,8 @@ export interface AppEnv {
     user: User | null
     sessionHash: string | null
     ip: string
+    /** A stricter Content-Security-Policy for this response (e.g. untrusted files). */
+    csp?: string
   }
 }
 

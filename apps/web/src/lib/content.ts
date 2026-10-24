@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { api, unwrap } from './api'
+import { ApiError, api, unwrap } from './api'
 
 const site = api.sites[':siteId']
 
@@ -173,10 +173,51 @@ export function humanize(name: string) {
 }
 
 /** Where to load a stored image path from for a preview, or null if it can't be shown. */
-export function previewUrl(path: string, siteUrl: string | null): string | null {
+/**
+ * URL to show an image or file used in content. Paths on the site go through
+ * the CMS, which serves unpublished uploads and repo files (and otherwise
+ * forwards to the live site); full URLs are used as they are.
+ */
+export function previewUrl(path: string, siteId: string, width?: 160 | 400 | 800): string | null {
   if (/^https?:\/\//.test(path)) return path
-  if (path.startsWith('/') && siteUrl) return `${siteUrl.replace(/\/$/, '')}${path}`
-  return null
+  if (!path.startsWith('/') || path.startsWith('//') || !siteId) return null
+  const w = width ? `&w=${width}` : ''
+  return `/api/sites/${encodeURIComponent(siteId)}/media/file?src=${encodeURIComponent(path)}${w}`
+}
+
+const fetchMedia = (siteId: string) => unwrap(site.media.$get({ param: { siteId } }))
+export type MediaLibrary = Awaited<ReturnType<typeof fetchMedia>>
+export type MediaItem = MediaLibrary['items'][number]
+
+/** Pseudo collection name the server uses for uploads in change lists. */
+export const MEDIA_COLLECTION = '@media'
+
+export const mediaQuery = (siteId: string) =>
+  queryOptions({ queryKey: ['sites', siteId, 'media'], queryFn: () => fetchMedia(siteId) })
+
+/** Uploads a file; the server resizes/converts it and stages it for the next publish. */
+export async function uploadMedia(siteId: string, file: File): Promise<MediaItem> {
+  const form = new FormData()
+  form.append('file', file)
+  let res: Response
+  try {
+    res = await fetch(`/api/sites/${encodeURIComponent(siteId)}/media`, {
+      method: 'POST',
+      body: form,
+      headers: { 'x-drikus-csrf': '1' },
+      credentials: 'same-origin',
+    })
+  } catch {
+    throw new ApiError('network', 0)
+  }
+  const body = (await res.json().catch(() => ({}))) as { error?: string; item?: MediaItem }
+  if (res.status === 413) throw new ApiError('file_too_large', 413)
+  if (!res.ok || !body.item) throw new ApiError(body.error ?? 'default', res.status)
+  return body.item
+}
+
+export function removeMedia(siteId: string, src: string) {
+  return unwrap(site.media.$delete({ param: { siteId }, query: { src } }))
 }
 
 /** Resolves config labels, which can be a string or one per UI language. */

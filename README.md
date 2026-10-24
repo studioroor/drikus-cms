@@ -19,7 +19,7 @@ How to describe a site's content is in [`docs/content-config.md`](docs/content-c
 | 2     | GitHub App: scoped installation tokens, repo linking, webhooks, cache                 | ✅    |
 | 3     | Content schema (`.drikus/config.yml`) + editor                                        | ✅    |
 | 4     | Drafts → one-commit publish, deploy status                                            | ✅    |
-| 5     | Media uploads                                                                         | ⏳    |
+| 5     | Media uploads                                                                         | ✅    |
 | 6     | Multilingual content                                                                  | ⏳    |
 
 ## Stack

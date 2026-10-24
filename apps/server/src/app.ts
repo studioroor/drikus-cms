@@ -35,6 +35,8 @@ export function createApp(deps: Deps) {
     c.set('deps', deps)
     c.set('ip', clientIp(c, deps.config.trustProxy))
     await next()
+    // Runs after secureHeaders below, so a route can tighten the policy for its response.
+    if (c.var.csp) c.res.headers.set('content-security-policy', c.var.csp)
   })
   app.use(
     secureHeaders({
@@ -60,7 +62,8 @@ export function createApp(deps: Deps) {
   app.route('/api/github/webhook', githubWebhookRoutes)
   app.use('/api/*', async (c, next) => {
     await next()
-    c.header('Cache-Control', 'no-store')
+    // API data is never cached, unless a route chose otherwise (e.g. content-addressed files).
+    if (!c.res.headers.has('cache-control')) c.header('Cache-Control', 'no-store')
   })
   app.use('/api/*', csrf, loadSession)
   app.route('/api', api)
