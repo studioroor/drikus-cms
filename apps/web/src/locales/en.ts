@@ -69,6 +69,15 @@ export const en: Messages = {
     soonBody:
       "This is where you'll edit your website's text and images. This feature is coming soon.",
   },
+  collection: {
+    sort: 'Sort by',
+    sortTitle: 'Title',
+    ascending: 'Ascending',
+    descending: 'Descending',
+    range: '{{from}}–{{to}} of {{total}}',
+    previous: 'Previous',
+    next: 'Next',
+  },
   editor: {
     notReadyTitle: "This website isn't ready for editing yet",
     notReadyEditor: 'Please contact your website manager.',

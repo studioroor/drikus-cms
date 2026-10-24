@@ -65,6 +65,16 @@ async function mapLimit<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<
   await Promise.all(Array.from({ length: Math.min(READ_CONCURRENCY, items.length) }, worker))
   return out
 }
+/** The top-level values the entry list sorts and shows: the sort field and all date fields. */
+function listedValues(collection: Collection, data: Data | null): Record<string, unknown> {
+  const values: Record<string, unknown> = {}
+  if (!data) return values
+  for (const f of collection.fields) {
+    if (f.name !== collection.sortBy && f.type !== 'date' && f.type !== 'datetime') continue
+    if (data[f.name] !== undefined) values[f.name] = data[f.name]
+  }
+  return values
+}
 
 /**
  * Content of one site: the published files at the branch head, overlaid with
@@ -245,6 +255,7 @@ export class ContentService {
       invalid: e.invalid,
       updatedAt: e.draft?.updatedAt.getTime() ?? null,
       sortValue: sortKey && e.data ? e.data[sortKey] : undefined,
+      values: listedValues(collection, e.data),
     }))
     const dir = collection.sortOrder === 'desc' ? -1 : 1
     list.sort((a, b) => {

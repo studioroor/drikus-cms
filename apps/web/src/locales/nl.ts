@@ -70,6 +70,15 @@ export const nl = {
     soonBody:
       'Hier kun je straks de teksten en afbeeldingen van je website aanpassen. Deze functie komt binnenkort.',
   },
+  collection: {
+    sort: 'Sorteer op',
+    sortTitle: 'Titel',
+    ascending: 'Oplopend',
+    descending: 'Aflopend',
+    range: '{{from}}–{{to}} van {{total}}',
+    previous: 'Vorige',
+    next: 'Volgende',
+  },
   editor: {
     notReadyTitle: 'Deze website is nog niet klaar om te bewerken',
     notReadyEditor: 'Neem contact op met je websitebeheerder.',
