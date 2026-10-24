@@ -18,7 +18,7 @@ How to describe a site's content is in [`docs/content-config.md`](docs/content-c
 | 1     | Accounts: superadmin, invites, sessions, 2FA, users/sites/memberships, audit log, CLI | ✅    |
 | 2     | GitHub App: scoped installation tokens, repo linking, webhooks, cache                 | ✅    |
 | 3     | Content schema (`.drikus/config.yml`) + editor                                        | ✅    |
-| 4     | Drafts → one-commit publish, deploy status                                            | ⏳    |
+| 4     | Drafts → one-commit publish, deploy status                                            | ✅    |
 | 5     | Media uploads                                                                         | ⏳    |
 | 6     | Multilingual content                                                                  | ⏳    |
 

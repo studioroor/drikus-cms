@@ -5,8 +5,9 @@ import { bodyLimit } from 'hono/body-limit'
 import { createMiddleware } from 'hono/factory'
 import { z } from 'zod'
 import type { Collection } from '../content/config'
+import { PublishService } from '../content/publish'
 import { ContentError, ContentService } from '../content/service'
-import { sites } from '../db/schema'
+import { sites, users } from '../db/schema'
 import type { AuthedEnv } from '../env'
 import { GitHubError } from '../github/app'
 import { githubFailure } from '../github/link'
@@ -24,6 +25,8 @@ const Data = z.object({ data: z.record(z.string(), z.unknown()) })
 const CollectionParam = z.object({ collection: z.string().max(64) })
 const EntryParam = z.object({ collection: z.string().max(64), slug: z.string().max(130) })
 const limit = bodyLimit({ maxSize: 2 * 1024 * 1024 })
+const PublishBody = z.object({ message: z.string().trim().max(500).optional() })
+const ResolveBody = z.object({ keep: z.enum(['mine', 'theirs']) })
 
 /** Builds the content service for the site in the URL (access was already checked). */
 const loadContent = createMiddleware<ContentEnv>(async (c, next) => {
@@ -183,4 +186,77 @@ export const contentRoutes = new Hono<ContentEnv>()
       const { collection, slug } = c.req.valid('param')
       return requireContent(c).discard(collection, slug)
     }),
+  )
+  .post(
+    '/collections/:collection/entries/:slug/resolve',
+    validate('param', EntryParam),
+    validate('json', ResolveBody),
+    (c) =>
+      handle(c, async () => {
+        const { collection, slug } = c.req.valid('param')
+        return new PublishService(requireContent(c)).resolve(
+          collection,
+          slug,
+          c.req.valid('json').keep,
+        )
+      }),
+  )
+  // --- Publishing ------------------------------------------------------------
+  .get('/publish', (c) => handle(c, () => new PublishService(requireContent(c)).preview()))
+  .post('/publish', validate('json', PublishBody), (c) =>
+    handle(c, async () => {
+      const res = await new PublishService(requireContent(c)).publish(
+        c.var.user,
+        c.req.valid('json').message,
+      )
+      if (res.publish) {
+        audit(c.var.deps.db, {
+          actorId: c.var.user.id,
+          action: 'content.published',
+          targetType: 'site',
+          targetId: c.req.param('siteId'),
+          ip: c.var.ip,
+          details: { commitSha: res.publish.commitSha, changes: res.publish.changes.length },
+        })
+      }
+      return {
+        publish: res.publish
+          ? { id: res.publish.id, commitSha: res.publish.commitSha, changes: res.publish.changes }
+          : null,
+      }
+    }),
+  )
+  .get('/publishes', (c) =>
+    handle(c, async () => {
+      const { db } = c.var.deps
+      const names = new Map(
+        db
+          .select({ id: users.id, name: users.name })
+          .from(users)
+          .all()
+          .map((u) => [u.id, u.name]),
+      )
+      const showCommits = c.var.user.role === 'superadmin'
+      const repo = c.var.content?.site.repoFullName
+      return {
+        publishes: new PublishService(requireContent(c)).history().map((p) => ({
+          id: p.id,
+          createdAt: p.createdAt.getTime(),
+          userName: p.userId ? (names.get(p.userId) ?? null) : null,
+          changes: p.changes,
+          deployState: p.deployState,
+          // Commit links are for the superadmin; clients don't use GitHub.
+          commitUrl:
+            showCommits && repo ? `https://github.com/${repo}/commit/${p.commitSha}` : null,
+        })),
+      }
+    }),
+  )
+  .get(
+    '/publishes/:publishId/status',
+    validate('param', z.object({ publishId: z.string().max(64) })),
+    (c) =>
+      handle(c, () =>
+        new PublishService(requireContent(c)).deployStatus(c.req.valid('param').publishId),
+      ),
   )

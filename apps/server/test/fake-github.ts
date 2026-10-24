@@ -43,6 +43,24 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
     tokens: new Map<string, IssuedToken>(),
     tokenRequests: [] as IssuedToken[],
     requests: [] as string[],
+    commits: new Map<
+      string,
+      { tree: string; parents: string[]; message: string; author: { name: string; email: string } }
+    >(),
+    checkRuns: new Map<
+      string,
+      { name: string; status: string; conclusion: string | null; details_url: string | null }[]
+    >(),
+    statuses: new Map<string, { context: string; state: string; target_url: string | null }[]>(),
+    /** Runs once right before the next branch update, e.g. to simulate someone else pushing. */
+    beforeRefUpdate: null as (() => void) | null,
+  }
+
+  /** Files of a branch as path → content. */
+  function filesAt(repoId: number, branch = 'main') {
+    const head = state.repos.get(repoId)?.branches.get(branch)
+    const entries = head ? (state.trees.get(head.treeSha) ?? []) : []
+    return Object.fromEntries(entries.map((e) => [e.path, state.blobs.get(e.sha) ?? '']))
   }
 
   function commit(repoId: number, branch: string, files: Record<string, string>) {
@@ -170,6 +188,72 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
       const entries = state.trees.get(tree[1] as string)
       return entries ? json({ sha: tree[1], tree: entries, truncated: false }) : notFound()
     }
+    const canWrite = token.permissions.contents === 'write'
+    if (rest === 'git/trees' && method === 'POST') {
+      if (!canWrite) return json({ message: 'Resource not accessible by integration' }, 403)
+      const body = JSON.parse(String(init?.body))
+      const base = new Map((state.trees.get(body.base_tree) ?? []).map((e) => [e.path, e]))
+      for (const change of body.tree as { path: string; sha?: string | null; content?: string }[]) {
+        if (change.sha === null) base.delete(change.path)
+        else if (change.content !== undefined) {
+          const sha = gitSha('blob', change.content)
+          state.blobs.set(sha, change.content)
+          base.set(change.path, {
+            path: change.path,
+            type: 'blob',
+            sha,
+            size: Buffer.byteLength(change.content),
+          })
+        }
+      }
+      const entries = [...base.values()].sort((a, b) => a.path.localeCompare(b.path))
+      const sha = gitSha('tree', JSON.stringify(entries))
+      state.trees.set(sha, entries)
+      return json({ sha }, 201)
+    }
+    if (rest === 'git/commits' && method === 'POST') {
+      if (!canWrite) return json({ message: 'Resource not accessible by integration' }, 403)
+      const body = JSON.parse(String(init?.body))
+      const sha = gitSha(
+        'commit',
+        `${body.tree}${body.parents.join()}${body.message}${Math.random()}`,
+      )
+      state.commits.set(sha, {
+        tree: body.tree,
+        parents: body.parents,
+        message: body.message,
+        author: body.author,
+      })
+      return json({ sha }, 201)
+    }
+    const ref = rest.match(/^git\/refs\/heads\/(.+)$/)
+    if (ref && method === 'PATCH') {
+      if (!canWrite) return json({ message: 'Resource not accessible by integration' }, 403)
+      const hook = state.beforeRefUpdate
+      state.beforeRefUpdate = null
+      hook?.()
+      const branchName = decodeURIComponent(ref[1] as string)
+      const body = JSON.parse(String(init?.body))
+      const current = repo.branches.get(branchName)
+      const commit = state.commits.get(body.sha)
+      if (!current || !commit) return json({ message: 'Reference does not exist' }, 422)
+      if (!body.force && commit.parents[0] !== current.commitSha) {
+        return json({ message: 'Update is not a fast forward' }, 422)
+      }
+      repo.branches.set(branchName, { commitSha: body.sha, treeSha: commit.tree })
+      return json({ ref: `refs/heads/${branchName}`, object: { sha: body.sha } })
+    }
+    const checks = rest.match(/^commits\/(\w+)\/(check-runs|status)$/)
+    if (checks) {
+      const [, sha, kind] = checks as [string, string, string]
+      if (kind === 'check-runs') {
+        if (token.permissions.checks !== 'read') return json({ message: 'Forbidden' }, 403)
+        return json({ total_count: 0, check_runs: state.checkRuns.get(sha) ?? [] })
+      }
+      if (token.permissions.statuses !== 'read') return json({ message: 'Forbidden' }, 403)
+      const list = state.statuses.get(sha) ?? []
+      return json({ state: list.length ? list[0]?.state : 'pending', statuses: list })
+    }
     const blob = rest.match(/^git\/blobs\/(\w+)$/)
     if (blob) {
       const content = state.blobs.get(blob[1] as string)
@@ -184,7 +268,7 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
     return notFound()
   }) as typeof fetch
 
-  return { appId, org, privateKey, state, fetch: fetchImpl, addRepo, commit }
+  return { appId, org, privateKey, state, fetch: fetchImpl, addRepo, commit, filesAt }
 }
 
 export type FakeGitHub = ReturnType<typeof fakeGitHub>

@@ -123,6 +123,10 @@ const homeRoute = createRoute({
 const siteRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/sites/$siteId',
+  validateSearch: (search: Record<string, unknown>): { publish?: boolean } =>
+    search.publish === true || search.publish === '1' || search.publish === 1
+      ? { publish: true }
+      : {},
   loader: ({ context, params }) =>
     Promise.all([
       context.queryClient.ensureQueryData(siteQuery(params.siteId)),

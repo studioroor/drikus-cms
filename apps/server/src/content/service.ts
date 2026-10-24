@@ -18,16 +18,23 @@ export type ContentErrorCode =
   | 'slug_required'
   | 'cannot_create'
   | 'cannot_delete'
+  | 'nothing_to_publish'
+  | 'publish_blocked'
+  | 'publish_in_progress'
 
 export class ContentError extends Error {
   constructor(
     readonly code: ContentErrorCode,
     readonly status: 400 | 404 | 409,
-    readonly issues?: FieldIssue[] | ConfigIssue[],
+    readonly issues?: FieldIssue[] | ConfigIssue[] | PublishProblem[],
   ) {
     super(code)
   }
 }
+
+export type PublishProblem =
+  | { kind: 'required'; collection: string; slug: string; title: string | null; fields: string[] }
+  | { kind: 'conflict' | 'config'; collection: string; slug: string; title: string | null }
 
 export type ConfigState =
   | { status: 'ok'; config: Config; path: string }
@@ -67,6 +74,12 @@ export class ContentService {
     readonly sync: SiteSync,
     readonly site: LinkedSite,
   ) {}
+
+  /** Forgets the cached head and tree, so the next read sees the branch as it is now. */
+  async refresh() {
+    await this.sync.head(this.site, { fresh: true })
+    this.#files = undefined
+  }
 
   /** Blob SHAs by path at the current head. */
   async files(): Promise<Map<string, string>> {
