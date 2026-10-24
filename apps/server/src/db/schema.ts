@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { blob, index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 const id = () =>
   text('id')
@@ -73,13 +73,41 @@ export const sites = sqliteTable('sites', {
   id: id(),
   name: text('name').notNull(),
   siteUrl: text('site_url'),
-  // GitHub repository ID (stable across renames); linked in phase 2.
+  // GitHub repository ID: stable across renames, so it's the real link.
   repoId: integer('repo_id').unique(),
+  // Cached `owner/name`, refreshed from GitHub when the repo is renamed.
   repoFullName: text('repo_full_name'),
   branch: text('branch').notNull().default('main'),
+  // Last known head of `branch`, kept fresh by webhooks or short-lived checks.
+  headSha: text('head_sha'),
+  headTreeSha: text('head_tree_sha'),
+  headCheckedAt: integer('head_checked_at', { mode: 'timestamp_ms' }),
   createdAt: timestamp('created_at'),
   updatedAt: timestamp('updated_at'),
 })
+
+/** Git trees by SHA. Content-addressed, so entries never go stale. */
+export const gitTrees = sqliteTable('git_trees', {
+  sha: text('sha').primaryKey(),
+  entries: text('entries', { mode: 'json' }).notNull().$type<TreeEntry[]>(),
+  truncated: integer('truncated', { mode: 'boolean' }).notNull().default(false),
+  createdAt: timestamp('created_at'),
+})
+
+/** Git blobs (file contents) by SHA. Content-addressed and immutable. */
+export const gitBlobs = sqliteTable('git_blobs', {
+  sha: text('sha').primaryKey(),
+  content: blob('content', { mode: 'buffer' }).notNull(),
+  size: integer('size').notNull(),
+  createdAt: timestamp('created_at'),
+})
+
+export interface TreeEntry {
+  path: string
+  type: 'blob' | 'tree' | 'commit'
+  sha: string
+  size?: number
+}
 
 export const siteMembers = sqliteTable(
   'site_members',

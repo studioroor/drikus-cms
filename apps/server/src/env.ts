@@ -1,6 +1,7 @@
 import type { AppConfig } from './config'
 import type { Db } from './db'
 import type { User } from './db/schema'
+import type { GitHubApp } from './github/app'
 import type { SecretBox } from './lib/crypto'
 import { RateLimiter } from './lib/rate-limit'
 
@@ -24,6 +25,8 @@ export interface Deps {
   config: AppConfig
   box: SecretBox
   limiters: ReturnType<typeof createLimiters>
+  /** Null when no GitHub App is configured. */
+  github: GitHubApp | null
 }
 
 export interface AppEnv {

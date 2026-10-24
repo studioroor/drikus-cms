@@ -16,6 +16,7 @@ import { setLocale } from './lib/i18n'
 import {
   adminSitesQuery,
   adminUsersQuery,
+  githubStatusQuery,
   meQuery,
   mySitesQuery,
   useErrorMessage,
@@ -164,6 +165,7 @@ const adminSitesRoute = createRoute({
     Promise.all([
       context.queryClient.ensureQueryData(adminSitesQuery),
       context.queryClient.ensureQueryData(adminUsersQuery),
+      context.queryClient.ensureQueryData(githubStatusQuery),
     ]),
   component: SitesPage,
 })

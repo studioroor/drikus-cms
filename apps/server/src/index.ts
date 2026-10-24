@@ -30,6 +30,16 @@ if (setupLink) {
   console.log(`  ${setupLink}\n`)
 }
 
+if (deps.github) {
+  console.log(
+    `GitHub App ${deps.github.webhookSecret ? 'with' : 'without'} webhooks, installed on ${deps.github.org}.`,
+  )
+} else {
+  console.log(
+    'GitHub App not configured (set GITHUB_APP_ID); sites cannot be linked to repositories yet.',
+  )
+}
+
 const server = Bun.serve({ port: env.PORT, fetch: app.fetch })
 console.log(
   `Drikus CMS listening on http://localhost:${server.port} (public URL ${deps.config.publicUrl})`,

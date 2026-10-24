@@ -6,17 +6,33 @@ import { makeConfig } from '../src/config'
 import { openDb } from '../src/db'
 import { type Role, siteMembers, sites, users } from '../src/db/schema'
 import { createLimiters, type Deps } from '../src/env'
+import { GitHubApp } from '../src/github/app'
 import { SecretBox } from '../src/lib/crypto'
+import type { FakeGitHub } from './fake-github'
 
 export const ORIGIN = 'http://cms.test'
 export const PASSWORD = 'correct horse battery'
 
-export function setup(overrides: Partial<Deps['config']> = {}) {
+export const WEBHOOK_SECRET = 'test-webhook-secret'
+
+/** A GitHubApp wired to an in-memory fake GitHub API. */
+export function githubFor(fake: FakeGitHub, opts: { webhookSecret?: string } = {}) {
+  return new GitHubApp({
+    appId: fake.appId,
+    privateKey: fake.privateKey,
+    org: fake.org,
+    webhookSecret: opts.webhookSecret ?? WEBHOOK_SECRET,
+    fetch: fake.fetch,
+  })
+}
+
+export function setup(overrides: Partial<Deps['config']> = {}, github: GitHubApp | null = null) {
   const deps: Deps = {
     db: openDb(':memory:'),
     config: makeConfig(ORIGIN, overrides),
     box: new SecretBox(Buffer.alloc(32, 7)),
     limiters: createLimiters(),
+    github,
   }
   const app = createApp(deps)
 

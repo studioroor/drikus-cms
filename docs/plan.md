@@ -52,6 +52,16 @@ packages/shared   shared types; Hono RPC client types (type-safe API calls)
 - **Commits** go through the Git Data API: blobs → tree → commit → `PATCH ref` (no force). The author is the editor's name with a noreply email, plus a `Drikus-CMS-User:` trailer, so you can always see who changed what.
 - **Concurrency**: each draft stores its `base_sha`. At publish, any file changed upstream since then gets a friendly "this page was changed elsewhere" dialog (keep mine / take theirs). A non-fast-forward ref update rebuilds the tree on the new head and retries.
 
+### GitHub App configuration (decided)
+
+- Owned by the `studioroor` org and installable only on that account. **No OAuth: no callback URL, and no "request user authorization".** Clients never touch GitHub.
+- Repo permissions: Contents RW, Metadata R, Checks R, Commit statuses R, Actions R. No org or account permissions.
+- Webhook URL: `<PUBLIC_URL>/api/github/webhook`. Subscribed events: Push, Check run, Status, Workflow run. The installation events are delivered automatically.
+- Optional Setup URL: `<PUBLIC_URL>/admin/sites` with "Redirect on update" checked.
+- **Webhooks are optional.** If the CMS isn't publicly reachable (e.g. a NAS kept off the internet), the server falls back to checking the branch head SHA when a site is opened and polls deploy status after publish.
+- New env vars in phase 2: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_FILE` (default `/data/github-app.pem`) or `GITHUB_APP_PRIVATE_KEY` (base64), and `GITHUB_WEBHOOK_SECRET`. The installation ID is discovered automatically via `GET /orgs/studioroor/installation` (org configurable with `GITHUB_ORG`).
+- An admin "GitHub" status panel shows: App reachable, installation found, number of repos accessible, and whether webhooks have been received recently.
+
 ## Authorization & security model (the "can't edit someone else's repo" part)
 
 1. **Clients never send repo names or arbitrary paths.** The API is `/api/sites/:siteId/collections/:collection/entries/:slug`. The server resolves the repo and the file path itself from the site record and the config.

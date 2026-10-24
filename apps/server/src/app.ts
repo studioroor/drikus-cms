@@ -5,6 +5,7 @@ import type { AppEnv, Deps } from './env'
 import { csrf, loadSession } from './middleware/auth'
 import { adminRoutes } from './routes/admin'
 import { authRoutes } from './routes/auth'
+import { githubWebhookRoutes } from './routes/github-webhook'
 import { siteRoutes } from './routes/sites'
 
 function clientIp(c: Context<AppEnv>, trustProxy: boolean) {
@@ -55,6 +56,8 @@ export function createApp(deps: Deps) {
   )
 
   app.get('/api/health', (c) => c.json({ ok: true }))
+  // Authenticated by HMAC signature instead of a session, so it skips CSRF/session checks.
+  app.route('/api/github/webhook', githubWebhookRoutes)
   app.use('/api/*', async (c, next) => {
     await next()
     c.header('Cache-Control', 'no-store')
