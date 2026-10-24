@@ -1,5 +1,8 @@
 # Fly.io: `fly launch --copy-config --no-deploy -c deploy/fly.toml`, then
-# `fly volumes create drikus_data --size 1` and `fly deploy -c deploy/fly.toml`.
+# `fly volumes create drikus_data --size 1` and `fly deploy --ha=false -c deploy/fly.toml`.
+# SQLite is a file on one volume: keep exactly ONE machine and ONE volume.
+# Without --ha=false the first deploy adds a second machine with its own,
+# empty database. Check with `fly machines list` and `fly volumes list`.
 # GitHub App secrets: `fly secrets set GITHUB_APP_ID=… GITHUB_WEBHOOK_SECRET=…`
 # and `fly secrets set GITHUB_APP_PRIVATE_KEY="$(base64 < github-app.pem | tr -d '\n')"`.
 # Admin CLI: `fly ssh console -c deploy/fly.toml -C "drikus help"`.
@@ -35,4 +38,5 @@ primary_region = "ams"
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "512mb"
+  # Room for resizing large photos (sharp decodes up to 80 megapixels).
+  memory = "1024mb"
