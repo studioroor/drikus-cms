@@ -150,9 +150,16 @@ const collectionRoute = createRoute({
   errorComponent: ErrorView,
 })
 
+const LOCALE = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/
+const localeParam = (v: unknown) => (typeof v === 'string' && LOCALE.test(v) ? v : undefined)
+/** Language of a translated entry; left out for the site's main language. */
+const localeSearch = (search: Record<string, unknown>): { locale?: string } =>
+  localeParam(search.locale) ? { locale: localeParam(search.locale) } : {}
+
 const newEntryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/sites/$siteId/$collection/new',
+  validateSearch: localeSearch,
   loader: ({ context, params }) =>
     Promise.all([
       context.queryClient.ensureQueryData(siteQuery(params.siteId)),
@@ -165,11 +172,15 @@ const newEntryRoute = createRoute({
 const entryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/sites/$siteId/$collection/edit/$slug',
-  loader: ({ context, params }) =>
+  validateSearch: localeSearch,
+  loaderDeps: ({ search }) => ({ locale: search.locale }),
+  loader: ({ context, params, deps }) =>
     Promise.all([
       context.queryClient.ensureQueryData(siteQuery(params.siteId)),
       context.queryClient.ensureQueryData(siteContentQuery(params.siteId)),
-      context.queryClient.fetchQuery(entryQuery(params.siteId, params.collection, params.slug)),
+      context.queryClient.fetchQuery(
+        entryQuery(params.siteId, params.collection, params.slug, deps.locale),
+      ),
     ]),
   component: EntryPage,
   errorComponent: ErrorView,
@@ -181,20 +192,26 @@ const versionParam = (v: unknown) => (typeof v === 'string' && VERSION_ID.test(v
 const historyRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/sites/$siteId/$collection/history/$slug',
-  validateSearch: (search: Record<string, unknown>): { a?: string; b?: string } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { a?: string; b?: string; locale?: string } => ({
     a: versionParam(search.a),
     b: versionParam(search.b),
+    ...localeSearch(search),
   }),
-  loader: ({ context, params }) =>
+  loaderDeps: ({ search }) => ({ locale: search.locale }),
+  loader: ({ context, params, deps }) =>
     Promise.all([
       context.queryClient.ensureQueryData(siteQuery(params.siteId)),
       context.queryClient.ensureQueryData(siteContentQuery(params.siteId)),
       // Always fresh: the editor may have saved since the entry was cached.
       context.queryClient.fetchQuery({
-        ...entryQuery(params.siteId, params.collection, params.slug),
+        ...entryQuery(params.siteId, params.collection, params.slug, deps.locale),
         staleTime: 0,
       }),
-      context.queryClient.fetchQuery(revisionsQuery(params.siteId, params.collection, params.slug)),
+      context.queryClient.fetchQuery(
+        revisionsQuery(params.siteId, params.collection, params.slug, deps.locale),
+      ),
     ]),
   component: HistoryPage,
   errorComponent: ErrorView,

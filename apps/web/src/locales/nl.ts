@@ -87,6 +87,7 @@ export const nl = {
       new: 'Nieuw',
       modified: 'Gewijzigd',
       deleted: 'Wordt verwijderd',
+      missing: 'Nog niet vertaald',
     },
     newEntry: 'Nieuw item',
     newEntryTitle: 'Nieuw: {{collection}}',
@@ -109,6 +110,15 @@ export const nl = {
     deletedBanner: 'Dit item wordt verwijderd bij de volgende publicatie.',
     restore: 'Terugzetten',
     editedBy: '{{name}} heeft dit {{time}} aangepast.',
+    languages: 'Talen',
+    missingTranslation:
+      'Dit is nog niet vertaald in het {{language}}. Vul het hier in, alles wordt vanzelf opgeslagen. De velden die in alle talen gelijk zijn staan er al in.',
+    sharedField: 'Gelijk in alle talen',
+    newInLanguage:
+      'Je maakt dit eerst in het {{language}}. De andere talen kun je daarna toevoegen.',
+    confirmDiscardAll: 'Alle wijzigingen aan dit item weggooien, in alle talen?',
+    confirmDeleteAll:
+      'Dit item in alle talen verwijderen? Het verdwijnt van de website zodra de wijzigingen gepubliceerd zijn.',
     required: 'verplicht',
     stillRequired: 'Nog in te vullen: {{fields}}',
     missing: 'Nog niet ingevuld',

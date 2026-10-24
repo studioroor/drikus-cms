@@ -85,6 +85,7 @@ export const en: Messages = {
       new: 'New',
       modified: 'Changed',
       deleted: 'Will be deleted',
+      missing: 'Not translated yet',
     },
     newEntry: 'New item',
     newEntryTitle: 'New: {{collection}}',
@@ -108,6 +109,15 @@ export const en: Messages = {
     deletedBanner: 'This item will be deleted with the next publish.',
     restore: 'Restore',
     editedBy: '{{name}} edited this {{time}}.',
+    languages: 'Languages',
+    missingTranslation:
+      "This hasn't been translated into {{language}} yet. Fill it in here, everything is saved automatically. The fields that are the same in all languages are already filled in.",
+    sharedField: 'Same in all languages',
+    newInLanguage:
+      "You're creating this in {{language}} first. You can add the other languages afterwards.",
+    confirmDiscardAll: 'Throw away all changes to this item, in all languages?',
+    confirmDeleteAll:
+      'Delete this item in all languages? It disappears from the website once the changes are published.',
     required: 'required',
     stillRequired: 'Still to fill in: {{fields}}',
     missing: 'Not filled in yet',

@@ -5,7 +5,7 @@ import { type ReactNode, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EditorContext } from '@/components/editor/context'
 import { FieldInput } from '@/components/editor/fields'
-import { Breadcrumbs } from '@/components/editor/status'
+import { Breadcrumbs, useLanguageName } from '@/components/editor/status'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Alert, Badge, EmptyState, Spinner } from '@/components/ui/feedback'
@@ -207,11 +207,13 @@ function Comparison({
   right,
   leftLabel,
   rightLabel,
+  locale,
 }: {
   siteId: string
   siteUrl: string | null
   collection: CollectionInfo
   slug: string
+  locale?: string
   left: VersionId
   right: VersionId
   leftLabel: string
@@ -220,8 +222,8 @@ function Comparison({
   const { t } = useTranslation()
   const label = useLabel()
   const [onlyChanges, setOnlyChanges] = useState(true)
-  const a = useQuery(revisionQuery(siteId, collection.name, slug, left))
-  const b = useQuery(revisionQuery(siteId, collection.name, slug, right))
+  const a = useQuery(revisionQuery(siteId, collection.name, slug, left, locale))
+  const b = useQuery(revisionQuery(siteId, collection.name, slug, right, locale))
   const fields = collection.fields.filter((f) => f.type !== 'hidden')
   const loaded = a.data && b.data
   const changed = new Set(
@@ -331,19 +333,23 @@ export function HistoryPage() {
   const errorMessage = useErrorMessage()
   const { siteId, collection: name, slug } = useParams({ from: ROUTE })
   const search = useSearch({ from: ROUTE })
+  const languageName = useLanguageName()
   const { data: site } = useSuspenseQuery(siteQuery(siteId))
   const { collection } = useSiteCollection(siteId, name)
-  const { data: entry } = useSuspenseQuery(entryQuery(siteId, name, slug))
-  const { data: list } = useSuspenseQuery(revisionsQuery(siteId, name, slug))
+  const locale = search.locale
+  const { data: entry } = useSuspenseQuery(entryQuery(siteId, name, slug, locale))
+  const { data: list } = useSuspenseQuery(revisionsQuery(siteId, name, slug, locale))
+  const back: Record<string, string> = locale ? { locale } : {}
   const versions = useVersions(list)
 
   const restore = useMutation({
-    mutationFn: (rev: string) => restoreRevision(siteId, name, slug, rev),
+    mutationFn: (rev: string) => restoreRevision(siteId, name, slug, rev, locale),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['sites', siteId] })
       await navigate({
         to: '/sites/$siteId/$collection/edit/$slug',
         params: { siteId, collection: name, slug },
+        search: back,
       })
     },
   })
@@ -386,12 +392,15 @@ export function HistoryPage() {
             label: title,
             to: '/sites/$siteId/$collection/edit/$slug',
             params: { siteId, collection: name, slug },
+            search: back,
           },
           { label: t('history.title') },
         ]}
       />
       <PageHeader
-        title={t('history.titleFor', { title })}
+        title={t('history.titleFor', {
+          title: entry.locale && entry.locales ? `${title} · ${languageName(entry.locale)}` : title,
+        })}
         subtitle={t('history.subtitle')}
         actions={
           <Button
@@ -400,6 +409,7 @@ export function HistoryPage() {
               void navigate({
                 to: '/sites/$siteId/$collection/edit/$slug',
                 params: { siteId, collection: name, slug },
+                search: back,
               })
             }
           >
@@ -453,6 +463,7 @@ export function HistoryPage() {
               slug={slug}
               left={left}
               right={right}
+              locale={locale}
               leftLabel={labelOf(left)}
               rightLabel={labelOf(right)}
             />

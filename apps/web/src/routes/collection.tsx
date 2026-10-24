@@ -3,7 +3,7 @@ import { Link, useParams } from '@tanstack/react-router'
 import { ChevronRight, Layers, Plus, Search } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Breadcrumbs, StatusBadge } from '@/components/editor/status'
+import { Breadcrumbs, LocaleDots, StatusBadge } from '@/components/editor/status'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/feedback'
 import { Input } from '@/components/ui/field'
@@ -91,7 +91,11 @@ export function CollectionPage() {
                   >
                     {e.title ?? (e.invalid ? t('editor.unreadable') : t('editor.untitled'))}
                   </span>
-                  <StatusBadge status={e.status} />
+                  {e.locales ? (
+                    <LocaleDots locales={e.locales} />
+                  ) : (
+                    <StatusBadge status={e.status} />
+                  )}
                   <ChevronRight className="size-4 shrink-0 text-stone-400" />
                 </Link>
               </li>

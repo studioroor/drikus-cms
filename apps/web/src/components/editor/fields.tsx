@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Languages, Plus, Trash2 } from 'lucide-react'
 import { lazy, type ReactNode, Suspense, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -87,7 +87,9 @@ function FieldRow({
   const id = useId()
   const { t } = useTranslation()
   const label = useLabel()
-  const { missing } = useEditor()
+  const { missing, translated } = useEditor()
+  // Shared fields are top-level only; the server copies them to the other languages.
+  const shared = translated && field.i18n === false && path === field.name
   const isGroup = field.type === 'object' || field.type === 'list' || field.type === 'blocks'
   const isMissing = missing.has(path)
 
@@ -95,6 +97,12 @@ function FieldRow({
     <span className="flex items-baseline gap-2">
       <span className="text-sm font-medium text-stone-800">{label(field.label, field.name)}</span>
       {field.required && <span className="text-xs text-stone-400">{t('editor.required')}</span>}
+      {shared && (
+        <span className="inline-flex items-center gap-1 text-xs text-stone-500">
+          <Languages className="size-3.5" />
+          {t('editor.sharedField')}
+        </span>
+      )}
     </span>
   )
   return (
