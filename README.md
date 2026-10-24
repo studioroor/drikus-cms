@@ -44,7 +44,8 @@ bun run dev          # API on :3000, web on http://localhost:5173 (proxies /api)
 
 On first start with an empty database, the server prints a one-time **setup link** to create the
 first superadmin. You can also use the CLI: `bun run cli create-admin you@example.com "Your Name"`.
-Superadmins have to enable two-step verification (TOTP) before they can use the admin screens.
+Superadmins have to enable two-step verification (TOTP) before they can use the admin screens,
+unless `REQUIRE_ADMIN_2FA=false` is set.
 
 ```sh
 bun test             # API tests (in-memory SQLite)
@@ -63,13 +64,14 @@ The image is published to `ghcr.io/studioroor/drikus-cms` by CI on every push to
 - `drikus.db` is the SQLite database.
 - `secret.key` encrypts secrets such as 2FA seeds. **Back it up together with the database.**
 
-| Variable      | Default                      |                                                                    |
-| ------------- | ---------------------------- | ------------------------------------------------------------------ |
-| `PUBLIC_URL`  | `http://localhost:3000`      | Public address; used for invite links and CSRF origin checks       |
-| `DATA_DIR`    | `./data` (`/data` in Docker) | Database and key location                                          |
-| `PORT`        | `3000`                       |                                                                    |
-| `TRUST_PROXY` | `false`                      | Set `true` behind a reverse proxy so rate limiting sees client IPs |
-| `SECRET_KEY`  | generated                    | Optional base64 32-byte key instead of `secret.key`                |
+| Variable            | Default                      |                                                                    |
+| ------------------- | ---------------------------- | ------------------------------------------------------------------ |
+| `PUBLIC_URL`        | `http://localhost:3000`      | Public address; used for invite links and CSRF origin checks       |
+| `DATA_DIR`          | `./data` (`/data` in Docker) | Database and key location                                          |
+| `PORT`              | `3000`                       |                                                                    |
+| `TRUST_PROXY`       | `false`                      | Set `true` behind a reverse proxy so rate limiting sees client IPs |
+| `SECRET_KEY`        | generated                    | Optional base64 32-byte key instead of `secret.key`                |
+| `REQUIRE_ADMIN_2FA` | `true`                       | Set `false` to make two-step verification optional for superadmins |
 
 **Synology:** copy [`deploy/docker-compose.yml`](deploy/docker-compose.yml) into a Container
 Manager project, set `PUBLIC_URL`, and point a reverse proxy rule (with HTTPS) at port 3000.

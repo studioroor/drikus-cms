@@ -15,6 +15,11 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  // Set to "false" to let superadmins use the admin screens without two-step verification.
+  REQUIRE_ADMIN_2FA: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
 })
 
 export interface AppConfig {

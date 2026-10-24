@@ -24,7 +24,10 @@ export function bootstrap(env = process.env) {
   mkdirSync(parsed.DATA_DIR, { recursive: true })
   const deps: Deps = {
     db: openDb(join(parsed.DATA_DIR, 'drikus.db')),
-    config: makeConfig(parsed.PUBLIC_URL, { trustProxy: parsed.TRUST_PROXY }),
+    config: makeConfig(parsed.PUBLIC_URL, {
+      trustProxy: parsed.TRUST_PROXY,
+      requireAdminTotp: parsed.REQUIRE_ADMIN_2FA,
+    }),
     box: loadSecretBox(parsed.DATA_DIR, parsed.SECRET_KEY),
     limiters: createLimiters(),
   }
