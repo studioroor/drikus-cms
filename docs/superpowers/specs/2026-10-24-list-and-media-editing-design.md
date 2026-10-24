@@ -19,7 +19,6 @@ Date: 2026-10-24 · Status: approved
 ## Why
 
 Editors lose their way in long lists. Two real cases:
-
 - **stylingbyvaleria → Reviews**: a `list` field with 27 items, most of them several paragraphs
   long. Every item is rendered as an open form, so finding one review means scrolling past all
   the others, and the Add button sits at the very bottom.
@@ -109,7 +108,6 @@ are covered by section 2 when the value is an image; other single-value lists (t
 inline as they are today, but get the sticky toolbar and drag reorder.
 
 **Layout (wide screens):** the list field becomes a two-pane panel.
-
 - **Toolbar** (sticky to the top of the panel while it scrolls): field label + item count,
   search box (filters the index by the item's title and other text fields), and the primary
   **+ Add** button. Add appends a new item, selects it, and focuses its first input.
@@ -129,20 +127,20 @@ inline as they are today, but get the sticky toolbar and drag reorder.
 **Narrow screens (phone / narrow container):** the same component switches to click-through:
 the index fills the width; tapping a row replaces it with the item view, which has a back link
 (breadcrumb) and previous/next. The breakpoint is based on the panel's container width, not the
-viewport, because the editor sits inside a `max-w-3xl` card. *Builder's call: whether the
+viewport, because the editor sits inside a `max-w-3xl` card. _Builder's call: whether the
 entry page widens for list-heavy entries so A has room on desktop. Recommended: widen the card
-when the entry has a list-of-objects field, since a two-pane editor in 768px is tight.*
+when the entry has a list-of-objects field, since a two-pane editor in 768px is tight._
 
 **Selection in the URL:** the selected item path is kept in the route's search params (e.g.
 `?item=reviews.4` or `?item=services.1.packages.0`) so reload, back/forward and sharing a link
 keep the place. One `item` param holds the full drilled-in path; selecting uses history
-*replace* (so Back leaves the entry rather than stepping through every click), drilling into a
-nested list uses *push* (so Back steps out one level). Reordering updates the param to follow
+_replace_ (so Back leaves the entry rather than stepping through every click), drilling into a
+nested list uses _push_ (so Back steps out one level). Reordering updates the param to follow
 the moved item; deleting moves it to the neighbour. The entry route gets a `validateSearch`.
 
 **Short lists:** a list of objects with ≤ 3 items whose fields are all short (no `text`,
-`markdown`, `richtext`, nested `list`/`blocks`) may render inline as today. *Builder's call;
-the threshold is a guess, not something the user asked for. When in doubt, use the index.*
+`markdown`, `richtext`, nested `list`/`blocks`) may render inline as today. _Builder's call;
+the threshold is a guess, not something the user asked for. When in doubt, use the index._
 
 **Delete:** removes the item and selects the neighbour. Offer Undo (a toast) rather than a
 confirm dialog. Undo re-inserts the item at its old position through `onChange`; autosave then
@@ -182,7 +180,6 @@ editable through the picker's "Paste URL" tab. `file` fields get the same card w
 instead of the image.
 
 **List of images** (`list` with `field.type: image`): a photo grid.
-
 - Square thumbnails, responsive columns (≈6 across in the editor card on desktop, 3 on phone).
 - Drag to reorder (with a placeholder slot showing where it lands); a position number on each.
 - Hover/focus shows ✕ to remove; on touch, tap a photo for a small sheet with Replace / Remove /
@@ -199,7 +196,6 @@ instead of the image.
 ### 5. Image picker
 
 A dialog (full screen on phone) with three tabs.
-
 - **On the site**: every image in the repo under the media folder. Grid of thumbnails with file
   names, search by file name, and a filter "Not used yet": an image counts as used when its
   public path appears anywhere in the text of any entry (published or draft, folder and file
@@ -236,7 +232,6 @@ a manual commit to the client repo by a developer, not something the CMS does.
 Two parts, shipped separately.
 
 **6a. Read (needed for thumbnails and "On the site")**
-
 - `GET /sites/:id/media`: images under the media folder from the cached head tree: repo path,
   public path, size, blob SHA. Includes staged uploads (from 6b) once they exist.
 - `GET /sites/:id/media/raw?path=…&w=…`: serves the image with the right content type and
@@ -254,7 +249,6 @@ Uploading (staging, type checks, resizing/WebP, committing on publish, how publi
 counts uploads, which file types and limits are allowed) is phase 5 of `plan.md`, which is
 already under construction in its own branch. This design doesn't specify it; it only relies on
 phase 5 providing:
-
 - an endpoint that takes one or more files for a site and returns, per file, the repo path and
   public path it will be committed under (inside the media folder);
 - staged uploads showing up in `GET /sites/:id/media` (6a), marked as not yet published;
@@ -271,7 +265,6 @@ verify in the Docker build.
 ### 7. Collection index: pagination and sorting
 
 On `collection.tsx`:
-
 - **Sort control** next to the search: options are the title/summary field, `sortBy` (the
   default, with its `sortOrder`) and any top-level `date`/`datetime` fields. Direction toggle.
   No "recently edited" sort: published entries have no edit time without a per-file GitHub
@@ -297,7 +290,6 @@ enables the picker and repo thumbnails, and describe the new list and image edit
 ## Build order
 
 Each step ships on its own and is useful without the next:
-
 1. **List editor**: sections 1–3, with thumbnails via `siteUrl` as today until 6a lands.
 2. **Image fields and photo grid**: section 4, with Add opening a picker that only has Paste
    URL.
