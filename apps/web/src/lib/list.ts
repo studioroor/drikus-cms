@@ -1,6 +1,6 @@
 import type { Data, FieldDef } from './content'
 
-const asObject = (v: unknown): Data =>
+export const asObject = (v: unknown): Data =>
   typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Data) : {}
 
 export function move<T>(list: T[], from: number, to: number): T[] {
