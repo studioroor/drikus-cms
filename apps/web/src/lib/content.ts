@@ -216,13 +216,20 @@ export function humanize(name: string) {
 /**
  * URL to show an image or file used in content. Paths on the site go through
  * the CMS, which serves unpublished uploads and repo files (and otherwise
- * forwards to the live site); full URLs are used as they are.
+ * forwards to the live site); full URLs are used as they are. With the file's
+ * version (from the media library) the browser may cache it for good.
  */
-export function previewUrl(path: string, siteId: string, width?: 160 | 400 | 800): string | null {
+export function previewUrl(
+  path: string,
+  siteId: string,
+  width?: 160 | 400 | 800,
+  version?: string,
+): string | null {
   if (/^https?:\/\//.test(path)) return path
   if (!path.startsWith('/') || path.startsWith('//') || !siteId) return null
   const w = width ? `&w=${width}` : ''
-  return `/api/sites/${encodeURIComponent(siteId)}/media/file?src=${encodeURIComponent(path)}${w}`
+  const v = version ? `&v=${version}` : ''
+  return `/api/sites/${encodeURIComponent(siteId)}/media/file?src=${encodeURIComponent(path)}${w}${v}`
 }
 
 const fetchMedia = (siteId: string) => unwrap(site.media.$get({ param: { siteId } }))
