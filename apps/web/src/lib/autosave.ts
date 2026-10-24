@@ -16,34 +16,38 @@ export function useAutosave<T, R>(
   const pending = useRef<{ value: T } | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const inFlight = useRef(false)
+  const current = useRef<Promise<void> | null>(null)
   const saveRef = useRef(save)
   const onSavedRef = useRef(onSaved)
   saveRef.current = save
   onSavedRef.current = onSaved
 
-  const run = useCallback(async () => {
+  const run = useCallback((): Promise<void> => {
     clearTimeout(timer.current)
-    if (inFlight.current || !pending.current) return
+    if (inFlight.current || !pending.current) return current.current ?? Promise.resolve()
     const { value } = pending.current
     pending.current = null
     inFlight.current = true
     setState('saving')
-    try {
-      const result = await saveRef.current(value)
-      onSavedRef.current?.(result)
-      setState(pending.current ? 'pending' : 'saved')
-    } catch {
-      // Keep the newest value: either something typed meanwhile, or this one.
-      pending.current ??= { value }
-      setState('error')
-      timer.current = setTimeout(() => {
-        timer.current = undefined
-        void run()
-      }, RETRY_MS)
-    } finally {
-      inFlight.current = false
-    }
-    if (pending.current && timer.current === undefined) void run()
+    current.current = (async () => {
+      try {
+        const result = await saveRef.current(value)
+        onSavedRef.current?.(result)
+        setState(pending.current ? 'pending' : 'saved')
+      } catch {
+        // Keep the newest value: either something typed meanwhile, or this one.
+        pending.current ??= { value }
+        setState('error')
+        timer.current = setTimeout(() => {
+          timer.current = undefined
+          void run()
+        }, RETRY_MS)
+      } finally {
+        inFlight.current = false
+      }
+      if (pending.current && timer.current === undefined) void run()
+    })()
+    return current.current
   }, [])
 
   const schedule = useCallback(
@@ -67,9 +71,12 @@ export function useAutosave<T, R>(
     setState('idle')
   }, [])
 
-  const flush = useCallback(() => {
+  /** Saves anything pending now and waits for in-flight saves to finish. */
+  const flush = useCallback(async () => {
     timer.current = undefined
-    return run()
+    for (let i = 0; i < 5 && (pending.current || inFlight.current); i++) {
+      await (inFlight.current ? current.current : run())
+    }
   }, [run])
 
   // Save what's left when leaving the page, and warn when closing the tab mid-save.

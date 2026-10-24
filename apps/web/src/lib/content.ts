@@ -51,6 +51,54 @@ export const entryQuery = (siteId: string, collection: string, slug: string) =>
 export const changesQuery = (siteId: string) =>
   queryOptions({ queryKey: ['sites', siteId, 'changes'], queryFn: () => fetchChanges(siteId) })
 
+const fetchPublishPreview = (siteId: string) => unwrap(site.publish.$get({ param: { siteId } }))
+const fetchPublishes = (siteId: string) =>
+  unwrap(site.publishes.$get({ param: { siteId } })).then((r) => r.publishes)
+const fetchDeployStatus = (siteId: string, publishId: string) =>
+  unwrap(site.publishes[':publishId'].status.$get({ param: { siteId, publishId } }))
+
+export type PublishPreview = Awaited<ReturnType<typeof fetchPublishPreview>>
+export type PublishProblem = PublishPreview['problems'][number]
+export type PublishRecord = Awaited<ReturnType<typeof fetchPublishes>>[number]
+export type DeployState = PublishRecord['deployState']
+
+export const publishPreviewQuery = (siteId: string) =>
+  queryOptions({
+    queryKey: ['sites', siteId, 'publish-preview'],
+    queryFn: () => fetchPublishPreview(siteId),
+    staleTime: 0,
+    gcTime: 0,
+  })
+
+export const publishesQuery = (siteId: string) =>
+  queryOptions({ queryKey: ['sites', siteId, 'publishes'], queryFn: () => fetchPublishes(siteId) })
+
+/** Polls a publish's deploy state while it's still pending. */
+export const deployStatusQuery = (siteId: string, publishId: string) =>
+  queryOptions({
+    queryKey: ['sites', siteId, 'deploy', publishId],
+    queryFn: () => fetchDeployStatus(siteId, publishId),
+    refetchInterval: (q) => (q.state.data && q.state.data.state !== 'pending' ? false : 4000),
+  })
+
+export function publishSite(siteId: string, message: string) {
+  return unwrap(site.publish.$post({ param: { siteId }, json: message.trim() ? { message } : {} }))
+}
+
+export function resolveConflict(
+  siteId: string,
+  collection: string,
+  slug: string,
+  keep: 'mine' | 'theirs',
+) {
+  return unwrap(
+    site.collections[':collection'].entries[':slug'].resolve.$post({
+      param: { siteId, collection, slug },
+      json: { keep },
+    }),
+  )
+}
+
 export function saveEntry(siteId: string, collection: string, slug: string, data: Data) {
   return unwrap(
     site.collections[':collection'].entries[':slug'].$put({

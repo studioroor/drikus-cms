@@ -134,6 +134,39 @@ export const drafts = sqliteTable(
 
 export type Draft = typeof drafts.$inferSelect
 
+export const DEPLOY_STATES = ['pending', 'success', 'failure', 'none', 'unknown'] as const
+export type DeployState = (typeof DEPLOY_STATES)[number]
+
+export interface PublishedChange {
+  collection: string
+  slug: string
+  path: string
+  status: 'new' | 'modified' | 'deleted'
+  title: string | null
+}
+
+/** One row per publish: the commit it made and the deploy state of that commit. */
+export const publishes = sqliteTable(
+  'publishes',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    commitSha: text('commit_sha').notNull(),
+    message: text('message').notNull(),
+    changes: text('changes', { mode: 'json' }).notNull().$type<PublishedChange[]>(),
+    // Cached once final (success/failure/none); pending states are re-checked.
+    deployState: text('deploy_state', { enum: DEPLOY_STATES }).notNull().default('pending'),
+    deployCheckedAt: integer('deploy_checked_at', { mode: 'timestamp_ms' }),
+    createdAt: timestamp('created_at'),
+  },
+  (t) => [index('publishes_site_idx').on(t.siteId, t.createdAt)],
+)
+
+export type Publish = typeof publishes.$inferSelect
+
 export interface TreeEntry {
   path: string
   type: 'blob' | 'tree' | 'commit'

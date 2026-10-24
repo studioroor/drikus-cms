@@ -1,8 +1,18 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
-import { Link, useParams } from '@tanstack/react-router'
-import { ChevronRight, ExternalLink, FileText, Layers, PencilLine, Wrench } from 'lucide-react'
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
+import {
+  ChevronRight,
+  ExternalLink,
+  FileText,
+  Layers,
+  PencilLine,
+  Rocket,
+  Wrench,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { PublishDialog, PublishHistory } from '@/components/editor/publish'
 import { Breadcrumbs, StatusBadge } from '@/components/editor/status'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/feedback'
 import { api, unwrap } from '@/lib/api'
@@ -51,7 +61,15 @@ function NotReady({ content }: { content: SiteContent }) {
   )
 }
 
-function PendingChanges({ siteId, count }: { siteId: string; count: number }) {
+function PendingChanges({
+  siteId,
+  count,
+  onPublish,
+}: {
+  siteId: string
+  count: number
+  onPublish: () => void
+}) {
   const { t, i18n } = useTranslation()
   const label = useLabel()
   const content = useSuspenseQuery(siteContentQuery(siteId)).data
@@ -64,9 +82,14 @@ function PendingChanges({ siteId, count }: { siteId: string; count: number }) {
   const fmt = new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'short' })
   return (
     <Card className="mb-6 border-amber-200 bg-amber-50/50">
-      <div className="px-5 py-4">
-        <p className="font-medium text-amber-900">{t('editor.changes', { count })}</p>
-        <p className="mt-0.5 text-sm text-amber-800">{t('editor.publishSoon')}</p>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+        <div>
+          <p className="font-medium text-amber-900">{t('editor.changes', { count })}</p>
+          <p className="mt-0.5 text-sm text-amber-800">{t('publish.ready')}</p>
+        </div>
+        <Button onClick={onPublish}>
+          <Rocket className="size-4" /> {t('publish.button')}
+        </Button>
       </div>
       {changes.data && (
         <ul className="divide-y divide-amber-100 border-t border-amber-100 text-sm">
@@ -99,8 +122,19 @@ export function SitePage() {
   const { t } = useTranslation()
   const label = useLabel()
   const { siteId } = useParams({ from: '/app/sites/$siteId' })
+  const search = useSearch({ from: '/app/sites/$siteId' })
+  const navigate = useNavigate()
   const { data: site } = useSuspenseQuery(siteQuery(siteId))
   const { data: content } = useSuspenseQuery(siteContentQuery(siteId))
+  // The dialog is driven by ?publish=1 so the editor can link straight to it.
+  const publishing = search.publish === true
+  const setPublishing = (open: boolean) =>
+    void navigate({
+      to: '/sites/$siteId',
+      params: { siteId },
+      search: open ? { publish: true } : {},
+      replace: true,
+    })
 
   return (
     <>
@@ -126,7 +160,18 @@ export function SitePage() {
         <NotReady content={content} />
       ) : (
         <>
-          <PendingChanges siteId={siteId} count={content.changes} />
+          <PendingChanges
+            siteId={siteId}
+            count={content.changes}
+            onPublish={() => setPublishing(true)}
+          />
+          <PublishDialog
+            siteId={siteId}
+            siteUrl={site.siteUrl}
+            content={content}
+            open={publishing}
+            onClose={() => setPublishing(false)}
+          />
           <div className="grid gap-3 sm:grid-cols-2">
             {content.collections.map((c) => {
               const Icon = c.kind === 'file' ? FileText : Layers
@@ -164,6 +209,7 @@ export function SitePage() {
               )
             })}
           </div>
+          <PublishHistory siteId={siteId} />
         </>
       )}
     </>

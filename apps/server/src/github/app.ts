@@ -17,6 +17,18 @@ export interface RepoInfo {
   htmlUrl: string
 }
 
+export interface TreeChange {
+  path: string
+  /** New file content, or null to delete the file. */
+  content: string | null
+}
+
+export interface CommitCheck {
+  name: string
+  state: 'pending' | 'success' | 'failure'
+  url: string | null
+}
+
 export interface BranchHead {
   commitSha: string
   treeSha: string
@@ -247,6 +259,97 @@ export class RepoClient {
       })),
       truncated: res.truncated,
     }
+  }
+
+  #send<T>(path: string, method: 'POST' | 'PATCH', body: unknown) {
+    return this.app
+      .token([this.repoId], { contents: 'write' })
+      .then((auth) => this.app.request<T>(path, { auth, method, body }))
+  }
+
+  /** Creates a tree on top of `baseTree`. Entries with `content: null` delete that path. */
+  async createTree(fullName: string, baseTree: string, changes: TreeChange[]): Promise<string> {
+    const res = await this.#send<{ sha: string }>(`/repos/${fullName}/git/trees`, 'POST', {
+      base_tree: baseTree,
+      tree: changes.map((c) =>
+        c.content === null
+          ? { path: c.path, mode: '100644', type: 'blob', sha: null }
+          : { path: c.path, mode: '100644', type: 'blob', content: c.content },
+      ),
+    })
+    return res.sha
+  }
+
+  async createCommit(
+    fullName: string,
+    commit: {
+      message: string
+      tree: string
+      parent: string
+      author: { name: string; email: string }
+    },
+  ): Promise<string> {
+    const res = await this.#send<{ sha: string }>(`/repos/${fullName}/git/commits`, 'POST', {
+      message: commit.message,
+      tree: commit.tree,
+      parents: [commit.parent],
+      author: { ...commit.author, date: new Date().toISOString() },
+    })
+    return res.sha
+  }
+
+  /** Moves the branch to `sha`. Never forces: fails with 422 if the branch moved meanwhile. */
+  async updateBranch(fullName: string, branch: string, sha: string): Promise<void> {
+    await this.#send(`/repos/${fullName}/git/refs/heads/${encodeURIComponent(branch)}`, 'PATCH', {
+      sha,
+      force: false,
+    })
+  }
+
+  /** Check runs and commit statuses for a commit (GitHub Actions, Cloudflare Pages, …). */
+  async commitChecks(fullName: string, sha: string): Promise<CommitCheck[]> {
+    const [runs, statuses] = await Promise.allSettled([
+      this.#get<{
+        check_runs: {
+          name: string
+          status: string
+          conclusion: string | null
+          html_url: string | null
+          details_url: string | null
+        }[]
+      }>(`/repos/${fullName}/commits/${sha}/check-runs?per_page=100`, { checks: 'read' }),
+      this.#get<{ statuses: { context: string; state: string; target_url: string | null }[] }>(
+        `/repos/${fullName}/commits/${sha}/status`,
+        { statuses: 'read' },
+      ),
+    ])
+    if (runs.status === 'rejected' && statuses.status === 'rejected') throw runs.reason
+    const checks: CommitCheck[] = []
+    if (runs.status === 'fulfilled') {
+      for (const r of runs.value.check_runs) {
+        checks.push({
+          name: r.name,
+          state:
+            r.status !== 'completed'
+              ? 'pending'
+              : ['success', 'neutral', 'skipped'].includes(r.conclusion ?? '')
+                ? 'success'
+                : 'failure',
+          url: r.details_url ?? r.html_url,
+        })
+      }
+    }
+    if (statuses.status === 'fulfilled') {
+      for (const st of statuses.value.statuses) {
+        checks.push({
+          name: st.context,
+          state:
+            st.state === 'success' ? 'success' : st.state === 'pending' ? 'pending' : 'failure',
+          url: st.target_url,
+        })
+      }
+    }
+    return checks
   }
 
   async blob(fullName: string, sha: string): Promise<Buffer> {
