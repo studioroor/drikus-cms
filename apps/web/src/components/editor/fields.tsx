@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/field'
 import { cn } from '@/lib/cn'
 import { type Data, entriesQuery, type FieldDef, useLabel } from '@/lib/content'
-import { asObject, isInlineList, itemTitle, move, usesListEditor } from '@/lib/list'
+import { asObject, isImageList, isInlineList, itemTitle, move, usesListEditor } from '@/lib/list'
 import { useEditor } from './context'
+import { ImageGrid } from './image-grid'
 import { ListEditor } from './list-editor'
 import { useListIds, useListMode } from './list-ids'
 import { ListNavContext } from './list-nav'
@@ -74,9 +75,10 @@ function FieldRow({
   const { missing } = useEditor()
   const isGroup = field.type === 'object' || field.type === 'list' || field.type === 'blocks'
   const isMissing = missing.has(path)
-  // The list editor's toolbar carries the label itself (nested rows don't have one).
+  // The list editor's and photo grid's toolbars carry the label (nested rows don't have one).
   const nested = useContext(ListNavContext) !== null
   const inListEditor = useListMode(path, initialMode(field, value)) === 'editor' && !nested
+  const ownLabel = inListEditor || isImageList(field)
 
   const heading = (
     <span className="flex items-baseline gap-2">
@@ -86,7 +88,7 @@ function FieldRow({
   )
   return (
     <div className="space-y-1.5" data-field={path}>
-      {field.type === 'boolean' || inListEditor ? null : isGroup ? (
+      {field.type === 'boolean' || ownLabel ? null : isGroup ? (
         <div>{heading}</div>
       ) : (
         <label htmlFor={id} className="block">
@@ -270,6 +272,9 @@ export function FieldInput({
         </Group>
       )
     case 'list':
+      if (isImageList(field))
+        return <ImageGrid field={field} value={asArray(value)} path={path} onChange={onChange} />
+      return <ListField field={field} value={asArray(value)} path={path} onChange={onChange} />
     case 'blocks':
       return <ListField field={field} value={asArray(value)} path={path} onChange={onChange} />
     case 'hidden':

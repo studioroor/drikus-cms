@@ -10,6 +10,21 @@ export function move<T>(list: T[], from: number, to: number): T[] {
   return next
 }
 
+/** Appends `items` to `list` as far as `max` allows; the rest are dropped. */
+export function appendUpTo<T>(
+  list: T[],
+  items: T[],
+  max?: number,
+): { list: T[]; added: number; dropped: number } {
+  const room = max === undefined ? items.length : Math.max(0, max - list.length)
+  const kept = items.slice(0, room)
+  return { list: [...list, ...kept], added: kept.length, dropped: items.length - kept.length }
+}
+
+/** A list of single images, shown as a photo grid. */
+export const isImageList = (field: FieldDef): boolean =>
+  field.type === 'list' && field.field?.type === 'image'
+
 /** The fields of a list item or block; null for a block type that isn't defined. */
 export function itemFields(field: FieldDef, item: unknown): FieldDef[] | null {
   if (field.type === 'blocks') {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Data, FieldDef } from './content'
 import {
+  appendUpTo,
   hasImageField,
   insertedIndex,
   insideItemOf,
@@ -237,5 +238,27 @@ describe('insideItemOf', () => {
     expect(insideItemOf('services.1.packages', 'services.1.packages')).toBe(false)
     expect(insideItemOf('services.10.packages', 'services.1')).toBe(false)
     expect(insideItemOf('other.0.x', 'services')).toBe(false)
+  })
+})
+
+describe('appendUpTo', () => {
+  test('stops at max and reports what was dropped', () => {
+    expect(appendUpTo(['a', 'b', 'c'], ['d', 'e', 'f', 'g', 'h'], 5)).toEqual({
+      list: ['a', 'b', 'c', 'd', 'e'],
+      added: 2,
+      dropped: 3,
+    })
+  })
+
+  test('adds everything without max', () => {
+    expect(appendUpTo(['a'], ['b', 'c'])).toEqual({ list: ['a', 'b', 'c'], added: 2, dropped: 0 })
+  })
+
+  test('allows duplicates', () => {
+    expect(appendUpTo(['a'], ['a']).list).toEqual(['a', 'a'])
+  })
+
+  test('adds nothing to a list that is already over max', () => {
+    expect(appendUpTo(['a', 'b'], ['c'], 1)).toEqual({ list: ['a', 'b'], added: 0, dropped: 1 })
   })
 })
