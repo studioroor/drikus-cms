@@ -76,6 +76,11 @@ export const FieldSchema = z.object({
   multiple: z.boolean().optional(),
   // reference
   collection: Name.optional(),
+  // richtext: styles to pick for an image, written after "#" in its path (photo.jpg#right)
+  imageStyles: z
+    .array(z.union([Name, z.object({ label: Label, value: Name })]))
+    .max(20)
+    .optional(),
   // list / object
   get fields() {
     return z.array(FieldSchema).max(100).optional()

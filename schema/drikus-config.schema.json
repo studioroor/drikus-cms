@@ -307,6 +307,54 @@
           "maxLength": 64,
           "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
         },
+        "imageStyles": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "nl": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "en": {
+                            "type": "string",
+                            "maxLength": 200
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "value": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+                  }
+                },
+                "required": [
+                  "label",
+                  "value"
+                ]
+              }
+            ]
+          }
+        },
         "fields": {
           "maxItems": 100,
           "type": "array",

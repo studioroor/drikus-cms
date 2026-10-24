@@ -30,3 +30,41 @@
     background: rgb(28 25 23 / 0.4);
   }
 }
+
+/* Images in the rich text editor; the badge shows the style hint after "#". */
+.rich-image {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+  border-radius: 0.375rem;
+}
+.rich-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 16rem;
+  border-radius: 0.375rem;
+}
+.rich-image-missing {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border: 1px dashed var(--color-stone-300);
+  border-radius: 0.375rem;
+  color: var(--color-stone-500);
+  font-size: 0.875rem;
+}
+.rich-image[data-style]::after {
+  content: "#" attr(data-style);
+  position: absolute;
+  top: 0.25rem;
+  left: 0.25rem;
+  padding: 0 0.375rem;
+  border-radius: 0.25rem;
+  background: rgb(28 25 23 / 0.7);
+  color: white;
+  font-size: 0.75rem;
+}
+.ProseMirror-selectednode.rich-image {
+  outline: 3px solid var(--color-brand-600);
+  outline-offset: 2px;
+}
