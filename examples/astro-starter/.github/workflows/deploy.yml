@@ -1,0 +1,37 @@
+# Builds the site and publishes it on GitHub Pages after every change, also
+# the ones made in Drikus CMS. The CMS shows this run as the deploy status.
+# Using Cloudflare Pages instead? Delete this file (see README).
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: withastro/action@v5
+        with:
+          package-manager: bun@1.4.4
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

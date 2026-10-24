@@ -1,0 +1,14 @@
+{
+  "name": "astro-starter",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "7.3.8",
+    "marked": "18.1.0"
+  }
+}

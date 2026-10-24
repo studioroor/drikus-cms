@@ -20,6 +20,10 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  // Daily database snapshots to keep (in BACKUP_DIR); 0 turns them off.
+  BACKUP_KEEP: z.coerce.number().int().min(0).max(1000).default(7),
+  // Defaults to DATA_DIR/backups.
+  BACKUP_DIR: z.string().optional(),
   // GitHub App (see README). Leave GITHUB_APP_ID unset to run without GitHub.
   GITHUB_APP_ID: z.string().regex(/^\w+$/).optional(),
   // The private key as PEM text, or base64 of it. Takes precedence over the file.

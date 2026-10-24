@@ -5,6 +5,7 @@ import { createAuthToken, inviteLink } from './auth/tokens'
 import { bootstrap } from './bootstrap'
 import { siteMembers, sites, users } from './db/schema'
 import { audit } from './lib/audit'
+import { backupSettings, createBackup, listBackups } from './lib/backup'
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
@@ -22,6 +23,8 @@ Usage: bun run cli <command> [args]
   ${bold('enable')} <email>                Re-enable a disabled account
   ${bold('users')}                         List all users
   ${bold('sites')}                         List all sites
+  ${bold('backup')}                        Write a database snapshot now
+  ${bold('backups')}                       List database snapshots
   ${bold('migrate')}                       Apply database migrations (also happens on start)
 `
 
@@ -36,7 +39,7 @@ function ask(question: string, fallback?: string) {
   return answer
 }
 
-const { deps } = bootstrap()
+const { env, deps } = bootstrap()
 const { db, config } = deps
 const [command, ...args] = process.argv.slice(2)
 
@@ -123,6 +126,24 @@ switch (command) {
       )
     }
     if (rows.length === 0) console.log(dim('No sites yet.'))
+    break
+  }
+  case 'backup': {
+    const file = createBackup(db, backupSettings(env))
+    audit(db, { action: 'backup.created', details: { file: file.name, size: file.size } })
+    console.log(green(`Backup written to ${file.path}`))
+    break
+  }
+  case 'backups': {
+    const settings = backupSettings(env)
+    const files = listBackups(settings.dir)
+    for (const f of files) {
+      const hours = Math.round((Date.now() - f.createdAt.getTime()) / 3_600_000)
+      const age = hours < 48 ? `${hours}h ago` : `${Math.round(hours / 24)} days ago`
+      console.log(`${bold(f.name)}  ${(f.size / 1024 / 1024).toFixed(1)} MB  ${dim(age)}`)
+    }
+    if (files.length === 0) console.log(dim(`No backups in ${settings.dir} yet.`))
+    else console.log(dim(settings.dir))
     break
   }
   case 'migrate':

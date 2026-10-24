@@ -1,0 +1,10 @@
+{
+  "name": "Bakkerij Jansen",
+  "phone": "015-123 45 67",
+  "email": "info@bakkerijjansen.nl",
+  "address": { "street": "Dorpsstraat 1", "city": "Delft" },
+  "hours": [
+    { "days": "Ma–vr", "time": "7:00–18:00" },
+    { "days": "Za", "time": "7:00–16:00" }
+  ]
+}

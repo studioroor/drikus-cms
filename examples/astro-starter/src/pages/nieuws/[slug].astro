@@ -1,0 +1,24 @@
+---
+import { render } from 'astro:content'
+import Layout from '../../layouts/Layout.astro'
+import { formatDate } from '../../lib'
+import { publishedPosts } from '../../posts'
+
+export async function getStaticPaths() {
+  const posts = await publishedPosts()
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }))
+}
+
+const { post } = Astro.props
+const { Content } = await render(post)
+---
+
+<Layout title={post.data.title}>
+  <article>
+    <h1>{post.data.title}</h1>
+    <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time>
+    {post.data.cover && <img src={post.data.cover} alt="" />}
+    <Content />
+  </article>
+  <p><a href="/nieuws/">← Alle berichten</a></p>
+</Layout>

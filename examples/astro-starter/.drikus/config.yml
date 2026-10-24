@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://github.com/studioroor/drikus-cms/raw/main/schema/drikus-config.schema.json
+#
+# What the client can edit in Drikus CMS. Field names match src/content.config.ts.
+# All options: https://github.com/studioroor/drikus-cms/blob/main/docs/content-config.md
+
+icon: public/favicon.svg
+
+media:
+  folder: public/uploads # served at /uploads
+  maxWidth: 1600
+
+# More than one language? List them and put {{locale}} in the paths below, e.g.
+# folder: src/content/posts/{{locale}}. See "Multiple languages" in the docs.
+# i18n: { locales: [nl, en] }
+
+collections:
+  - name: posts
+    label: { nl: Nieuws, en: News }
+    description: { nl: Berichten op de nieuwspagina, en: Posts on the news page }
+    folder: src/content/posts
+    slug: "{{title}}"
+    sortBy: date
+    sortOrder: desc
+    fields:
+      - { name: title, label: Titel, required: true }
+      - { name: date, label: Datum, type: date, required: true }
+      - { name: cover, label: Afbeelding, type: image }
+      - { name: draft, label: Verborgen, type: boolean, hint: Niet tonen op de website }
+      - { name: body, label: Tekst, type: richtext }
+
+  - name: home
+    label: Homepage
+    file: src/content/pages/home.json
+    fields:
+      - { name: title, label: Paginatitel, required: true }
+      - name: sections
+        label: Onderdelen
+        type: blocks
+        blocks:
+          - name: hero
+            label: Grote banner
+            fields:
+              - { name: heading, label: Kop, required: true }
+              - { name: text, label: Tekst, type: text }
+              - { name: image, label: Afbeelding, type: image }
+          - name: text
+            label: Tekst
+            fields:
+              - { name: heading, label: Kop }
+              - { name: body, label: Tekst, type: richtext }
+          - name: faq
+            label: Veelgestelde vragen
+            fields:
+              - { name: heading, label: Kop }
+              - name: items
+                label: Vragen
+                type: list
+                fields:
+                  - { name: q, label: Vraag, required: true }
+                  - { name: a, label: Antwoord, type: text }
+
+  - name: settings
+    label: { nl: Gegevens, en: Details }
+    description: { nl: Naam, adres en contactgegevens, en: Name, address and contact details }
+    file: src/data/settings.json
+    fields:
+      - { name: name, label: Naam, required: true }
+      - { name: phone, label: Telefoon }
+      - { name: email, label: E-mail }
+      - name: address
+        label: Adres
+        type: object
+        fields:
+          - { name: street, label: Straat }
+          - { name: city, label: Plaats }
+      - name: hours
+        label: Openingstijden
+        type: list
+        fields:
+          - { name: days, label: Dagen }
+          - { name: time, label: Tijden }
