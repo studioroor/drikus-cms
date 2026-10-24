@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from './components/ui/button'
 import { Card } from './components/ui/card'
 import { EmptyState, FullPageSpinner } from './components/ui/feedback'
-import { entriesQuery, entryQuery, siteContentQuery } from './lib/content'
+import { entriesQuery, entryQuery, revisionsQuery, siteContentQuery } from './lib/content'
 import { setLocale } from './lib/i18n'
 import {
   adminSitesQuery,
@@ -30,6 +30,7 @@ import { UsersPage } from './routes/admin/users'
 import { AppLayout } from './routes/app-layout'
 import { CollectionPage } from './routes/collection'
 import { EntryPage, NewEntryPage } from './routes/entry'
+import { HistoryPage } from './routes/history'
 import { HomePage } from './routes/home'
 import { LoginPage } from './routes/login'
 import { SitePage, siteQuery } from './routes/site'
@@ -174,6 +175,31 @@ const entryRoute = createRoute({
   errorComponent: ErrorView,
 })
 
+const VERSION_ID = /^([0-9a-f]{40}|draft)$/
+const versionParam = (v: unknown) => (typeof v === 'string' && VERSION_ID.test(v) ? v : undefined)
+
+const historyRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/sites/$siteId/$collection/history/$slug',
+  validateSearch: (search: Record<string, unknown>): { a?: string; b?: string } => ({
+    a: versionParam(search.a),
+    b: versionParam(search.b),
+  }),
+  loader: ({ context, params }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(siteQuery(params.siteId)),
+      context.queryClient.ensureQueryData(siteContentQuery(params.siteId)),
+      // Always fresh: the editor may have saved since the entry was cached.
+      context.queryClient.fetchQuery({
+        ...entryQuery(params.siteId, params.collection, params.slug),
+        staleTime: 0,
+      }),
+      context.queryClient.fetchQuery(revisionsQuery(params.siteId, params.collection, params.slug)),
+    ]),
+  component: HistoryPage,
+  errorComponent: ErrorView,
+})
+
 const accountRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/account',
@@ -237,6 +263,7 @@ const routeTree = rootRoute.addChildren([
     collectionRoute,
     newEntryRoute,
     entryRoute,
+    historyRoute,
     accountRoute,
     adminRoute.addChildren([adminIndexRoute, adminUsersRoute, adminSitesRoute, adminActivityRoute]),
   ]),

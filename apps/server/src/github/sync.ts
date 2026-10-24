@@ -1,13 +1,34 @@
 import { eq } from 'drizzle-orm'
 import type { Db } from '../db'
 import { gitBlobs, gitTrees, type Site, sites, type TreeEntry } from '../db/schema'
-import { type BranchHead, type GitHubApp, GitHubError } from './app'
+import { type BranchHead, type FileCommit, type GitHubApp, GitHubError } from './app'
 
 /** Without webhooks, re-check the branch head at most this often. */
 const HEAD_TTL_POLLING_MS = 15 * 1000
 /** With working webhooks, pushes update the head for us; re-check only occasionally. */
 const HEAD_TTL_WEBHOOKS_MS = 5 * 60 * 1000
 const WEBHOOK_HEALTHY_MS = 24 * 60 * 60 * 1000
+/** How many revisions of a file we show. */
+export const HISTORY_LIMIT = 50
+const MEMO_SIZE = 1000
+
+/** A small in-memory memo that forgets its oldest entries. */
+function memo<V>() {
+  const map = new Map<string, V>()
+  return {
+    get: (key: string) => map.get(key),
+    has: (key: string) => map.has(key),
+    set(key: string, value: V) {
+      map.set(key, value)
+      if (map.size > MEMO_SIZE) map.delete(map.keys().next().value as string)
+    },
+  }
+}
+
+/** File history by repo, head and path: a new head means new history. */
+const histories = memo<FileCommit[]>()
+/** Blob SHA (or null: no file) by repo, commit and path. Commits never change. */
+const filesAtCommit = memo<string | null>()
 
 export interface LinkedSite extends Site {
   repoId: number
@@ -98,6 +119,40 @@ export class SiteSync {
       .onConflictDoNothing()
       .run()
     return content
+  }
+
+  /** Commits on the site's branch that changed `path`, newest first. */
+  async history(site: LinkedSite, path: string): Promise<FileCommit[]> {
+    const head = await this.head(site)
+    const key = `${site.repoId}:${head.commitSha}:${path}`
+    const cached = histories.get(key)
+    if (cached) return cached
+    const commits = await this.#withRepo(site, (name) =>
+      this.github.repo(site.repoId).fileCommits(name, head.commitSha, path, HISTORY_LIMIT),
+    )
+    histories.set(key, commits)
+    return commits
+  }
+
+  /** A file as it was in a commit, or null if it didn't exist there. */
+  async fileAt(site: LinkedSite, commitSha: string, path: string): Promise<Buffer | null> {
+    const key = `${site.repoId}:${commitSha}:${path}`
+    if (filesAtCommit.has(key)) {
+      const sha = filesAtCommit.get(key)
+      return sha ? this.blob(site, sha) : null
+    }
+    const file = await this.#withRepo(site, (name) =>
+      this.github.repo(site.repoId).fileAt(name, path, commitSha),
+    )
+    filesAtCommit.set(key, file?.sha ?? null)
+    if (!file) return null
+    if (!file.content) return this.blob(site, file.sha)
+    this.db
+      .insert(gitBlobs)
+      .values({ sha: file.sha, content: file.content, size: file.content.length })
+      .onConflictDoNothing()
+      .run()
+    return file.content
   }
 
   /** Reads a file at the current head of the site's branch, or null if it doesn't exist. */

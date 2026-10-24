@@ -29,6 +29,14 @@ export interface CommitCheck {
   url: string | null
 }
 
+export interface FileCommit {
+  sha: string
+  message: string
+  authorName: string
+  /** ISO date of the commit. */
+  date: string
+}
+
 export interface BranchHead {
   commitSha: string
   treeSha: string
@@ -258,6 +266,57 @@ export class RepoClient {
         ...(size === undefined ? {} : { size }),
       })),
       truncated: res.truncated,
+    }
+  }
+
+  /** Commits on `ref` that changed `path`, newest first. */
+  async fileCommits(
+    fullName: string,
+    ref: string,
+    path: string,
+    limit: number,
+  ): Promise<FileCommit[]> {
+    const query = new URLSearchParams({ sha: ref, path, per_page: String(limit) })
+    const res = await this.#get<
+      {
+        sha: string
+        commit: { message: string; author: { name: string; date: string } | null }
+      }[]
+    >(`/repos/${fullName}/commits?${query}`)
+    return res.map((c) => ({
+      sha: c.sha,
+      message: c.commit.message,
+      authorName: c.commit.author?.name ?? '',
+      date: c.commit.author?.date ?? '',
+    }))
+  }
+
+  /**
+   * A file as it was at `ref`: its blob SHA, plus the content when GitHub
+   * includes it (files up to 1 MB). Null if the file didn't exist there.
+   */
+  async fileAt(
+    fullName: string,
+    path: string,
+    ref: string,
+  ): Promise<{ sha: string; content: Buffer | null } | null> {
+    const encoded = path.split('/').map(encodeURIComponent).join('/')
+    try {
+      const res = await this.#get<{
+        type: string
+        sha: string
+        content?: string
+        encoding?: string
+      }>(`/repos/${fullName}/contents/${encoded}?ref=${encodeURIComponent(ref)}`)
+      if (res.type !== 'file') return null
+      return {
+        sha: res.sha,
+        content:
+          res.encoding === 'base64' && res.content ? Buffer.from(res.content, 'base64') : null,
+      }
+    } catch (err) {
+      if (err instanceof GitHubError && err.status === 404) return null
+      throw err
     }
   }
 

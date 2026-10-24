@@ -26,6 +26,9 @@ const CollectionParam = z.object({ collection: z.string().max(64) })
 const EntryParam = z.object({ collection: z.string().max(64), slug: z.string().max(130) })
 const limit = bodyLimit({ maxSize: 2 * 1024 * 1024 })
 const PublishBody = z.object({ message: z.string().trim().max(500).optional() })
+const CommitSha = z.string().regex(/^[0-9a-f]{40}$/)
+const RevisionParam = EntryParam.extend({ rev: z.union([z.literal('draft'), CommitSha]) })
+const RestoreParam = EntryParam.extend({ rev: CommitSha })
 const ResolveBody = z.object({ keep: z.enum(['mine', 'theirs']) })
 
 /** Builds the content service for the site in the URL (access was already checked). */
@@ -186,6 +189,40 @@ export const contentRoutes = new Hono<ContentEnv>()
       const { collection, slug } = c.req.valid('param')
       return requireContent(c).discard(collection, slug)
     }),
+  )
+  // --- Revisions ---------------------------------------------------------------
+  .get('/collections/:collection/entries/:slug/revisions', validate('param', EntryParam), (c) =>
+    handle(c, async () => {
+      const { collection, slug } = c.req.valid('param')
+      return requireContent(c).revisions(collection, slug)
+    }),
+  )
+  .get(
+    '/collections/:collection/entries/:slug/revisions/:rev',
+    validate('param', RevisionParam),
+    (c) =>
+      handle(c, async () => {
+        const { collection, slug, rev } = c.req.valid('param')
+        return requireContent(c).readRevision(collection, slug, rev)
+      }),
+  )
+  .post(
+    '/collections/:collection/entries/:slug/revisions/:rev/restore',
+    validate('param', RestoreParam),
+    (c) =>
+      handle(c, async () => {
+        const { collection, slug, rev } = c.req.valid('param')
+        const res = await requireContent(c).restoreRevision(collection, slug, rev, c.var.user.id)
+        audit(c.var.deps.db, {
+          actorId: c.var.user.id,
+          action: 'content.restored',
+          targetType: 'site',
+          targetId: c.req.param('siteId'),
+          ip: c.var.ip,
+          details: { collection, slug, commitSha: rev },
+        })
+        return res
+      }),
   )
   .post(
     '/collections/:collection/entries/:slug/resolve',

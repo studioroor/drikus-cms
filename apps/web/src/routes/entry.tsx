@@ -1,6 +1,15 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { AlertCircle, Check, CloudUpload, Loader2, Rocket, RotateCcw, Trash2 } from 'lucide-react'
+import {
+  AlertCircle,
+  Check,
+  CloudUpload,
+  History,
+  Loader2,
+  Rocket,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EditorContext } from '@/components/editor/context'
@@ -160,6 +169,17 @@ function EntryForm({
     },
   })
 
+  // Same for history: the latest typing should show up as the draft there.
+  const goHistory = useMutation({
+    mutationFn: async () => {
+      await autosave.flush()
+      await navigate({
+        to: '/sites/$siteId/$collection/history/$slug',
+        params: { siteId, collection: collection.name, slug },
+      })
+    },
+  })
+
   const missing = useMemo(
     () => new Set(issues.filter((i) => i.code === 'required').map((i) => i.path)),
     [issues],
@@ -215,6 +235,16 @@ function EntryForm({
               }}
             >
               <RotateCcw className="size-4" /> {t('editor.discard')}
+            </Button>
+          )}
+          {entry.published && (
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={goHistory.isPending}
+              onClick={() => goHistory.mutate()}
+            >
+              <History className="size-4" /> {t('history.button')}
             </Button>
           )}
           {collection.kind === 'folder' && collection.delete && !deleted && (
