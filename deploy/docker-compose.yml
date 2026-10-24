@@ -16,5 +16,5 @@ services:
       GITHUB_WEBHOOK_SECRET: "change-me"
     volumes:
       - ./data:/data
-    # The image runs as uid 1000. If your data folder is owned by another user,
-    # either chown it to 1000 or set `user: "<uid>:<gid>"` here.
+    # The app runs as uid 1000 and takes ownership of ./data on start. To keep
+    # another owner instead, set `user: "<uid>:<gid>"` here.
