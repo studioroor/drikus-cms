@@ -16,7 +16,8 @@
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "schema": "bun run --cwd apps/server schema"
+    "schema": "bun run --cwd apps/server schema",
+    "deploy": "fly deploy --ha=false -c deploy/fly.toml"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.2"

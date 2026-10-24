@@ -1,0 +1,21 @@
+name: Deploy
+
+# Run by hand from the Actions tab ("Run workflow"). Needs a FLY_API_TOKEN
+# repository secret: `fly tokens create deploy -a drikus-cms`.
+on:
+  workflow_dispatch:
+
+concurrency: deploy
+
+permissions:
+  contents: read
+
+jobs:
+  fly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+      - run: flyctl deploy --remote-only --ha=false -c deploy/fly.toml
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
