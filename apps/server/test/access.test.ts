@@ -58,7 +58,6 @@ describe('admin routes', () => {
     const site = await admin.post('/api/admin/sites', {
       name: 'Bakkerij Jansen',
       siteUrl: 'https://bakkerijjansen.nl',
-      repoFullName: 'studioroor/bakkerij-jansen',
     })
     expect(site.status).toBe(201)
 
@@ -73,7 +72,8 @@ describe('admin routes', () => {
 
     const sites = await admin.get('/api/admin/sites')
     expect(sites.json.sites[0]).toMatchObject({
-      repoFullName: 'studioroor/bakkerij-jansen',
+      siteUrl: 'https://bakkerijjansen.nl',
+      repoFullName: null,
       memberIds: [user.json.id],
     })
 
@@ -84,11 +84,12 @@ describe('admin routes', () => {
     expect(audit.json.entries.map((e: { action: string }) => e.action)).toContain('user.created')
   })
 
-  test('rejects invalid repo names', async () => {
+  test('linking a repo requires a configured GitHub App', async () => {
     const ctx = setup()
     const admin = await adminClient(ctx)
-    const res = await admin.post('/api/admin/sites', { name: 'X', repoFullName: '../../etc' })
+    const res = await admin.post('/api/admin/sites', { name: 'X', repoId: 1 })
     expect(res.status).toBe(400)
+    expect(res.json.error).toBe('github_not_configured')
   })
 
   test('superadmin cannot lock themselves out', async () => {

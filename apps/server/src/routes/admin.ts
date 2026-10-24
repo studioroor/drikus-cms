@@ -1,13 +1,15 @@
-import { desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, ne } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { revokeUserSessions } from '../auth/sessions'
 import { createAuthToken, inviteLink } from '../auth/tokens'
-import { auditLog, LOCALES, ROLES, siteMembers, sites, users } from '../db/schema'
+import { auditLog, LOCALES, ROLES, type Site, siteMembers, sites, users } from '../db/schema'
 import type { AuthedEnv } from '../env'
+import { resolveRepoLink } from '../github/link'
 import { audit } from '../lib/audit'
 import { validate } from '../lib/http'
 import { requireSuperadmin } from '../middleware/auth'
+import { adminGithubRoutes } from './admin-github'
 
 const name = z.string().trim().min(1).max(100)
 const ids = z.array(z.string().max(64)).max(1000)
@@ -31,14 +33,11 @@ const UserUpdate = z.object({
   disabled: z.boolean().optional(),
 })
 
-const repoFullName = z
-  .string()
-  .trim()
-  .regex(/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/, 'owner/repo')
 const SiteBody = z.object({
   name,
   siteUrl: z.url().max(500).nullable().optional(),
-  repoFullName: repoFullName.nullable().optional(),
+  // GitHub repository ID from /admin/github/repos; null unlinks the repo.
+  repoId: z.number().int().positive().nullable().optional(),
   branch: z
     .string()
     .trim()
@@ -46,6 +45,14 @@ const SiteBody = z.object({
     .max(200)
     .optional(),
 })
+
+const UNLINKED = {
+  repoId: null,
+  repoFullName: null,
+  headSha: null,
+  headTreeSha: null,
+  headCheckedAt: null,
+} satisfies Partial<Site>
 
 function userStatus(u: { passwordHash: string | null; disabledAt: Date | null }) {
   if (u.disabledAt) return 'disabled' as const
@@ -254,6 +261,7 @@ export const adminRoutes = new Hono<AuthedEnv>()
         id: s.id,
         name: s.name,
         siteUrl: s.siteUrl,
+        repoId: s.repoId,
         repoFullName: s.repoFullName,
         branch: s.branch,
         memberIds: members.get(s.id) ?? [],
@@ -261,17 +269,21 @@ export const adminRoutes = new Hono<AuthedEnv>()
       }))
     return c.json({ sites: list })
   })
-  .post('/sites', validate('json', SiteBody), (c) => {
-    const { db } = c.var.deps
+  .post('/sites', validate('json', SiteBody), async (c) => {
+    const { db, github } = c.var.deps
     const body = c.req.valid('json')
+    let link = {}
+    if (body.repoId) {
+      if (db.select({ id: sites.id }).from(sites).where(eq(sites.repoId, body.repoId)).get()) {
+        return c.json({ error: 'repo_in_use' as const }, 409)
+      }
+      const res = await resolveRepoLink(github, body.repoId, body.branch)
+      if (!res.ok) return c.json({ error: res.error }, res.status)
+      link = { repoId: res.repoId, repoFullName: res.repoFullName, branch: res.branch }
+    }
     const site = db
       .insert(sites)
-      .values({
-        name: body.name,
-        siteUrl: body.siteUrl ?? null,
-        repoFullName: body.repoFullName ?? null,
-        ...(body.branch ? { branch: body.branch } : {}),
-      })
+      .values({ name: body.name, siteUrl: body.siteUrl ?? null, ...link })
       .returning()
       .get()
     audit(db, {
@@ -283,26 +295,58 @@ export const adminRoutes = new Hono<AuthedEnv>()
     })
     return c.json({ id: site.id }, 201)
   })
-  .patch('/sites/:id', validate('param', IdParam), validate('json', SiteBody.partial()), (c) => {
-    const { db } = c.var.deps
-    const { id } = c.req.valid('param')
-    const res = db
-      .update(sites)
-      .set({ ...c.req.valid('json'), updatedAt: new Date() })
-      .where(eq(sites.id, id))
-      .returning({ id: sites.id })
-      .all()
-    if (res.length === 0) return c.json({ error: 'not_found' as const }, 404)
-    audit(db, {
-      actorId: c.var.user.id,
-      action: 'site.updated',
-      targetType: 'site',
-      targetId: id,
-      ip: c.var.ip,
-      details: c.req.valid('json'),
-    })
-    return c.json({ ok: true as const })
-  })
+  .patch(
+    '/sites/:id',
+    validate('param', IdParam),
+    validate('json', SiteBody.partial()),
+    async (c) => {
+      const { db, github } = c.var.deps
+      const { id } = c.req.valid('param')
+      const { repoId, branch, ...rest } = c.req.valid('json')
+      const site = db.select().from(sites).where(eq(sites.id, id)).get()
+      if (!site) return c.json({ error: 'not_found' as const }, 404)
+
+      let link: Partial<Site> = {}
+      if (repoId === null) {
+        link = UNLINKED
+      } else if (repoId !== undefined || (branch !== undefined && branch !== site.branch)) {
+        const targetRepo = repoId ?? site.repoId
+        if (!targetRepo) {
+          link = branch ? { branch } : {}
+        } else {
+          const taken = db
+            .select({ id: sites.id })
+            .from(sites)
+            .where(and(eq(sites.repoId, targetRepo), ne(sites.id, id)))
+            .get()
+          if (taken) return c.json({ error: 'repo_in_use' as const }, 409)
+          // Keep the current branch unless the repo changes or a new one is given.
+          const targetBranch = branch ?? (targetRepo === site.repoId ? site.branch : undefined)
+          const res = await resolveRepoLink(github, targetRepo, targetBranch)
+          if (!res.ok) return c.json({ error: res.error }, res.status)
+          link = {
+            ...UNLINKED,
+            repoId: res.repoId,
+            repoFullName: res.repoFullName,
+            branch: res.branch,
+          }
+        }
+      }
+      db.update(sites)
+        .set({ ...rest, ...link, updatedAt: new Date() })
+        .where(eq(sites.id, id))
+        .run()
+      audit(db, {
+        actorId: c.var.user.id,
+        action: 'site.updated',
+        targetType: 'site',
+        targetId: id,
+        ip: c.var.ip,
+        details: c.req.valid('json'),
+      })
+      return c.json({ ok: true as const })
+    },
+  )
   .delete('/sites/:id', validate('param', IdParam), (c) => {
     const { db } = c.var.deps
     const { id } = c.req.valid('param')
@@ -355,6 +399,7 @@ export const adminRoutes = new Hono<AuthedEnv>()
       return c.json({ ok: true as const })
     },
   )
+  .route('/', adminGithubRoutes)
   // --- Audit log -------------------------------------------------------------
   .get(
     '/audit',

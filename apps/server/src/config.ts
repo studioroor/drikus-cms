@@ -15,7 +15,19 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  // GitHub App (see README). Leave GITHUB_APP_ID unset to run without GitHub.
+  GITHUB_APP_ID: z.string().regex(/^\w+$/).optional(),
+  // The private key as PEM text, or base64 of it. Takes precedence over the file.
+  GITHUB_APP_PRIVATE_KEY: z.string().optional(),
+  // Defaults to DATA_DIR/github-app.pem.
+  GITHUB_APP_PRIVATE_KEY_FILE: z.string().optional(),
+  GITHUB_WEBHOOK_SECRET: z.string().optional(),
+  // The organization (or user) the app is installed on.
+  GITHUB_ORG: z.string().default('studioroor'),
+  GITHUB_API_URL: z.url().optional(),
 })
+
+export type Env = z.infer<typeof EnvSchema>
 
 export interface AppConfig {
   publicUrl: string

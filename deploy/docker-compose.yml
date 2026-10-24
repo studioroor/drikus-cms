@@ -11,6 +11,9 @@ services:
       PUBLIC_URL: https://cms.example.com
       # The Synology reverse proxy (Login Portal → Advanced → Reverse Proxy) sets X-Forwarded-For.
       TRUST_PROXY: "true"
+      # GitHub App: put the private key in ./data/github-app.pem.
+      GITHUB_APP_ID: "123456"
+      GITHUB_WEBHOOK_SECRET: "change-me"
     volumes:
       - ./data:/data
     # The image runs as uid 1000. If your data folder is owned by another user,
