@@ -128,7 +128,24 @@ export const CollectionSchema = z.object({
 
 export const ConfigSchema = z.object({
   collections: z.array(CollectionSchema).min(1).max(100),
-  media: z.object({ folder: RepoPath, publicPath: z.string().max(300).optional() }).optional(),
+  /** Where uploads go and how images are processed (see docs/content-config.md). */
+  media: z
+    .object({
+      folder: RepoPath.default('public/uploads'),
+      /** URL the site serves the folder at; derived from the folder when omitted. */
+      publicPath: z
+        .string()
+        .max(300)
+        .regex(/^\/[A-Za-z0-9._\-/]*$/, 'Start with / and use letters, digits, ., -, _ and /')
+        .optional(),
+      /** Images wider than this are scaled down (pixels). */
+      maxWidth: z.number().int().min(200).max(8000).default(2000),
+      /** "webp" converts photos to WebP; "original" keeps JPEG/PNG/GIF. */
+      format: z.enum(['webp', 'original']).default('webp'),
+      quality: z.number().int().min(40).max(100).default(82),
+      maxSizeMb: z.number().min(1).max(50).default(15),
+    })
+    .optional(),
   /** Image shown for the site in the CMS; found automatically when omitted. */
   icon: RepoPath.optional(),
 })

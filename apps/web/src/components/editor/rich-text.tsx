@@ -15,11 +15,13 @@ import {
   Trash2,
   Undo2,
 } from 'lucide-react'
-import { type ReactNode, useEffect, useId, useRef } from 'react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/field'
 import { cn } from '@/lib/cn'
 import { previewUrl } from '@/lib/content'
+import { MediaPicker } from './media'
 import { joinImageSrc, richTextExtensions, splitImageSrc } from './rich-text-extensions'
 
 export interface ImageStyle {
@@ -33,20 +35,21 @@ export function RichTextEditor({
   value,
   onChange,
   readOnly,
-  siteUrl = null,
+  siteId = '',
   imageStyles = [],
 }: {
   id: string
   value: string
   onChange: (markdown: string) => void
   readOnly?: boolean
-  siteUrl?: string | null
+  siteId?: string
   imageStyles?: ImageStyle[]
 }) {
   const { t } = useTranslation()
+  const [inserting, setInserting] = useState(false)
   const lastEmitted = useRef(value)
   const editor = useEditor({
-    extensions: richTextExtensions((path) => previewUrl(path, siteUrl)),
+    extensions: richTextExtensions((path) => previewUrl(path, siteId, 800)),
     content: value,
     contentType: 'markdown',
     editable: !readOnly,
@@ -160,15 +163,7 @@ export function RichTextEditor({
       icon: ImagePlus,
       label: t('editor.rich.image'),
       active: !!state?.image,
-      run: () => {
-        const path = window.prompt(t('editor.rich.imagePrompt'), '/uploads/')
-        if (!path?.trim() || path.trim() === '/uploads/') return
-        const at = editor.state.selection.from
-        chain()
-          .insertContent({ type: 'image', attrs: { src: path.trim() } })
-          .setNodeSelection(at)
-          .run()
-      },
+      run: () => setInserting(true),
     },
     {
       icon: Undo2,
@@ -208,9 +203,25 @@ export function RichTextEditor({
         </div>
       )}
       {!readOnly && state?.image && (
-        <ImagePanel editor={editor} attrs={state.image} styles={imageStyles} />
+        <ImagePanel editor={editor} attrs={state.image} styles={imageStyles} siteId={siteId} />
       )}
       <EditorContent editor={editor} />
+      <MediaPicker
+        siteId={siteId}
+        kind="image"
+        open={inserting}
+        onClose={() => setInserting(false)}
+        onSelect={(src) => {
+          // Insert at the cursor and select the image, so its settings panel opens for alt text.
+          const at = editor.state.selection.from
+          editor
+            .chain()
+            .focus()
+            .insertContent({ type: 'image', attrs: { src } })
+            .setNodeSelection(at)
+            .run()
+        }}
+      />
     </div>
   )
 }
@@ -226,12 +237,15 @@ function ImagePanel({
   editor,
   attrs,
   styles,
+  siteId,
 }: {
   editor: Editor
   attrs: ImageAttrs
   styles: ImageStyle[]
+  siteId: string
 }) {
   const { t } = useTranslation()
+  const [picking, setPicking] = useState(false)
   const id = useId()
   const src = attrs.src ?? ''
   // Without configured styles the hint stays part of the path, so nothing gets lost.
@@ -254,11 +268,23 @@ function ImagePanel({
   return (
     <div className="grid gap-3 border-b border-stone-200 bg-brand-50/60 px-3 py-3 sm:grid-cols-2">
       <ImageSetting id={`${id}-path`} label={t('editor.rich.imagePath')}>
-        <Input
-          id={`${id}-path`}
-          value={path}
-          placeholder="/uploads/…"
-          onChange={(e) => update({ src: joinImageSrc(e.target.value, style) })}
+        <div className="flex gap-2">
+          <Input
+            id={`${id}-path`}
+            value={path}
+            placeholder="/uploads/…"
+            onChange={(e) => update({ src: joinImageSrc(e.target.value, style) })}
+          />
+          <Button variant="secondary" onClick={() => setPicking(true)}>
+            {t('media.replace')}
+          </Button>
+        </div>
+        <MediaPicker
+          siteId={siteId}
+          kind="image"
+          open={picking}
+          onClose={() => setPicking(false)}
+          onSelect={(src) => update({ src: joinImageSrc(src, style) })}
         />
       </ImageSetting>
       {styles.length > 0 && (

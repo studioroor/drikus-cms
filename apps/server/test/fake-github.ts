@@ -50,6 +50,8 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
     repos: new Map<number, FakeRepo>(),
     trees: new Map<string, TreeEntry[]>(),
     blobs: new Map<string, string>(),
+    /** Binary blobs uploaded through POST git/blobs (uploads), by their real Git SHA. */
+    binaryBlobs: new Map<string, Buffer>(),
     tokens: new Map<string, IssuedToken>(),
     tokenRequests: [] as IssuedToken[],
     requests: [] as string[],
@@ -71,6 +73,17 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
     const head = state.repos.get(repoId)?.branches.get(branch)
     const entries = head ? (state.trees.get(head.treeSha) ?? []) : []
     return Object.fromEntries(entries.map((e) => [e.path, state.blobs.get(e.sha) ?? '']))
+  }
+
+  /** Binary files of a branch as path → bytes. */
+  function binaryAt(repoId: number, branch = 'main') {
+    const head = state.repos.get(repoId)?.branches.get(branch)
+    const entries = head ? (state.trees.get(head.treeSha) ?? []) : []
+    return Object.fromEntries(
+      entries
+        .filter((e) => state.binaryBlobs.has(e.sha))
+        .map((e) => [e.path, state.binaryBlobs.get(e.sha) as Buffer]),
+    )
   }
 
   /** Pushes a commit whose tree is exactly `files` (on top of the branch's current head). */
@@ -242,7 +255,16 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
       const base = new Map((state.trees.get(body.base_tree) ?? []).map((e) => [e.path, e]))
       for (const change of body.tree as { path: string; sha?: string | null; content?: string }[]) {
         if (change.sha === null) base.delete(change.path)
-        else if (change.content !== undefined) {
+        else if (change.sha) {
+          const bin = state.binaryBlobs.get(change.sha)
+          if (!bin) return json({ message: 'Invalid tree info' }, 422)
+          base.set(change.path, {
+            path: change.path,
+            type: 'blob',
+            sha: change.sha,
+            size: bin.length,
+          })
+        } else if (change.content !== undefined) {
           const sha = gitSha('blob', change.content)
           state.blobs.set(sha, change.content)
           base.set(change.path, {
@@ -256,6 +278,14 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
       const entries = [...base.values()].sort((a, b) => a.path.localeCompare(b.path))
       const sha = gitSha('tree', JSON.stringify(entries))
       state.trees.set(sha, entries)
+      return json({ sha }, 201)
+    }
+    if (rest === 'git/blobs' && method === 'POST') {
+      if (!canWrite) return json({ message: 'Resource not accessible by integration' }, 403)
+      const body = JSON.parse(String(init?.body))
+      const bytes = Buffer.from(body.content, body.encoding === 'base64' ? 'base64' : 'utf8')
+      const sha = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex')
+      state.binaryBlobs.set(sha, bytes)
       return json({ sha }, 201)
     }
     if (rest === 'git/commits' && method === 'POST') {
@@ -338,6 +368,8 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
     }
     const blob = rest.match(/^git\/blobs\/(\w+)$/)
     if (blob) {
+      const bin = state.binaryBlobs.get(blob[1] as string)
+      if (bin) return json({ sha: blob[1], content: bin.toString('base64'), encoding: 'base64' })
       const content = state.blobs.get(blob[1] as string)
       return content === undefined
         ? notFound()
@@ -350,7 +382,7 @@ export function fakeGitHub(opts: { appId?: string; org?: string } = {}) {
     return notFound()
   }) as typeof fetch
 
-  return { appId, org, privateKey, state, fetch: fetchImpl, addRepo, commit, filesAt }
+  return { appId, org, privateKey, state, fetch: fetchImpl, addRepo, commit, filesAt, binaryAt }
 }
 
 export type FakeGitHub = ReturnType<typeof fakeGitHub>

@@ -18,6 +18,7 @@ import {
   type DeployState,
   deployStatusQuery,
   discardEntry,
+  MEDIA_COLLECTION,
   type PublishProblem,
   publishesQuery,
   publishPreviewQuery,
@@ -32,7 +33,9 @@ import { StatusBadge } from './status'
 
 function useCollectionLabel(content: SiteContent) {
   const label = useLabel()
+  const { t } = useTranslation()
   return (name: string) => {
+    if (name === MEDIA_COLLECTION) return t('media.label')
     const c = content.collections.find((x) => x.name === name)
     return c ? label(c.label, c.name) : name
   }

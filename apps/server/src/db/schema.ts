@@ -135,6 +135,30 @@ export const drafts = sqliteTable(
 
 export type Draft = typeof drafts.$inferSelect
 
+/**
+ * Uploaded files waiting to be published. They're committed together with
+ * the drafts on the next publish, then removed from here.
+ */
+export const stagedMedia = sqliteTable(
+  'staged_media',
+  {
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    bytes: blob('bytes', { mode: 'buffer' }).notNull(),
+    size: integer('size').notNull(),
+    kind: text('kind', { enum: ['image', 'file'] }).notNull(),
+    width: integer('width'),
+    height: integer('height'),
+    uploadedBy: text('uploaded_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at'),
+  },
+  (t) => [primaryKey({ columns: [t.siteId, t.path] })],
+)
+
+export type StagedMedia = typeof stagedMedia.$inferSelect
+
 export const DEPLOY_STATES = ['pending', 'success', 'failure', 'none', 'unknown'] as const
 export type DeployState = (typeof DEPLOY_STATES)[number]
 

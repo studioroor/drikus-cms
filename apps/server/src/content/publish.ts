@@ -6,13 +6,16 @@ import {
   type Publish,
   type PublishedChange,
   publishes,
+  type StagedMedia,
   sites,
+  stagedMedia,
   type User,
 } from '../db/schema'
 import { GitHubError, type TreeChange } from '../github/app'
 import { gitBlobSha } from '../github/sha'
 import type { Collection, Config } from './config'
 import { checkFields } from './fields'
+import { isSafeRepoPath, MEDIA_COLLECTION, MediaService } from './media'
 import { entryPathFor } from './paths'
 import { ContentError, type ContentService, type PublishProblem } from './service'
 
@@ -33,14 +36,26 @@ function changeStatus(draft: Draft): PublishedChange['status'] {
   return draft.action === 'delete' ? 'deleted' : draft.baseSha ? 'modified' : 'new'
 }
 
-export function summarize(draftList: Draft[]): PublishedChange[] {
-  return draftList.map((d) => ({
-    collection: d.collection,
-    slug: d.slug,
-    path: d.path,
-    status: changeStatus(d),
-    title: draftTitle(d),
-  }))
+export function summarize(draftList: Draft[], media: StagedMedia[] = []): PublishedChange[] {
+  return [
+    ...draftList.map((d) => ({
+      collection: d.collection,
+      slug: d.slug,
+      path: d.path,
+      status: changeStatus(d),
+      title: draftTitle(d),
+    })),
+    ...media.map((m) => {
+      const name = m.path.split('/').pop() as string
+      return {
+        collection: MEDIA_COLLECTION,
+        slug: name,
+        path: m.path,
+        status: 'new' as const,
+        title: name,
+      }
+    }),
+  ]
 }
 
 /**
@@ -81,9 +96,18 @@ export function findProblems(
   return problems
 }
 
-/** Turns drafts into tree changes, skipping ones that already match GitHub. */
-export function treeChanges(draftList: Draft[], files: Map<string, string>): TreeChange[] {
+/** Turns drafts and uploads into tree changes, skipping ones that already match GitHub. */
+export function treeChanges(
+  draftList: Draft[],
+  files: Map<string, string>,
+  media: StagedMedia[] = [],
+): TreeChange[] {
   const changes: TreeChange[] = []
+  for (const m of media) {
+    if (isSafeRepoPath(m.path) && files.get(m.path) !== gitBlobSha(m.bytes)) {
+      changes.push({ path: m.path, content: m.bytes })
+    }
+  }
   for (const d of draftList) {
     const current = files.get(d.path) ?? null
     if (d.action === 'delete') {
@@ -117,7 +141,8 @@ export class PublishService {
     await this.content.refresh()
     const [files, config] = await Promise.all([this.content.files(), this.content.config()])
     const pending = this.content.drafts()
-    return { changes: summarize(pending), problems: findProblems(pending, files, config) }
+    const media = new MediaService(this.content).staged()
+    return { changes: summarize(pending, media), problems: findProblems(pending, files, config) }
   }
 
   /** Resolves a conflict: keep the draft (overwriting GitHub) or drop it (keeping GitHub's version). */
@@ -156,18 +181,23 @@ export class PublishService {
       const head = await this.content.sync.head(site)
       const [files, config] = await Promise.all([this.content.files(), this.content.config()])
       const snapshot = this.content.drafts()
-      if (snapshot.length === 0) throw new ContentError('nothing_to_publish', 400)
+      const media = new MediaService(this.content).staged()
+      if (snapshot.length === 0 && media.length === 0) {
+        throw new ContentError('nothing_to_publish', 400)
+      }
       const problems = findProblems(snapshot, files, config)
       if (problems.length) throw new ContentError('publish_blocked', 409, problems)
 
-      const changes = treeChanges(snapshot, files)
+      const changes = treeChanges(snapshot, files, media)
       if (changes.length === 0) {
         // Everything is already on GitHub (e.g. someone pushed the same edit).
-        this.#settle(snapshot, new Map())
+        this.#settle(snapshot, new Map(), media)
         return { publish: null }
       }
 
-      const summary = summarize(snapshot).filter((c) => changes.some((t) => t.path === c.path))
+      const summary = summarize(snapshot, media).filter((c) =>
+        changes.some((t) => t.path === c.path),
+      )
       const tree = await repo.createTree(site.repoFullName, head.treeSha, changes)
       const commitSha = await repo.createCommit(site.repoFullName, {
         message: commitMessage(message, summary, user),
@@ -193,7 +223,7 @@ export class PublishService {
           .run()
         for (const c of changes) {
           if (c.content === null) continue
-          const content = Buffer.from(c.content, 'utf8')
+          const content = typeof c.content === 'string' ? Buffer.from(c.content, 'utf8') : c.content
           tx.insert(gitBlobs)
             .values({ sha: gitBlobSha(content), content, size: content.length })
             .onConflictDoNothing()
@@ -211,7 +241,7 @@ export class PublishService {
           .returning()
           .get()
       })
-      this.#settle(snapshot, published)
+      this.#settle(snapshot, published, media)
       return { publish: record }
     }
   }
@@ -220,8 +250,14 @@ export class PublishService {
    * Removes published drafts. A draft edited while we were publishing stays,
    * re-based on what we just published so it isn't seen as a conflict.
    */
-  #settle(snapshot: Draft[], published: Map<string, string | null>) {
+  #settle(snapshot: Draft[], published: Map<string, string | null>, media: StagedMedia[]) {
     this.#db.transaction((tx) => {
+      // Uploads are immutable (content-hashed names), so published ones can simply go.
+      for (const m of media) {
+        tx.delete(stagedMedia)
+          .where(and(eq(stagedMedia.siteId, m.siteId), eq(stagedMedia.path, m.path)))
+          .run()
+      }
       for (const draft of snapshot) {
         const where = and(eq(drafts.siteId, draft.siteId), eq(drafts.path, draft.path))
         const current = tx.select().from(drafts).where(where).get()
