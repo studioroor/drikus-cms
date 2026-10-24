@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/field'
 import { cn } from '@/lib/cn'
 import { type Data, entriesQuery, type FieldDef, useLabel } from '@/lib/content'
+import { itemTitle, move } from '@/lib/list'
 import { useEditor } from './context'
 import { MediaField } from './media'
 
@@ -36,13 +37,6 @@ const asString = (v: unknown) =>
 const asObject = (v: unknown): Data =>
   typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Data) : {}
 const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
-
-function move<T>(list: T[], from: number, to: number): T[] {
-  const next = [...list]
-  const [item] = next.splice(from, 1)
-  next.splice(to, 0, item as T)
-  return next
-}
 
 /** All fields of an object (entry, group, list item or block). */
 export function FieldList({
@@ -477,15 +471,6 @@ function ItemControls({
       </button>
     </div>
   )
-}
-
-function itemTitle(fields: FieldDef[], item: Data): string | null {
-  for (const f of fields) {
-    const v = item[f.name]
-    if ((f.type === 'string' || f.type === 'text') && typeof v === 'string' && v.trim())
-      return v.trim().slice(0, 80)
-  }
-  return null
 }
 
 function ListInput({
