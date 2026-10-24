@@ -14,6 +14,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EditorContext } from '@/components/editor/context'
 import { FieldList } from '@/components/editor/fields'
+import { ListIdsProvider } from '@/components/editor/list-ids'
 import { Breadcrumbs, StatusBadge, statusDot, useLanguageName } from '@/components/editor/status'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -34,6 +35,7 @@ import {
   saveEntry,
   useLabel,
 } from '@/lib/content'
+import { hasListEditor } from '@/lib/list'
 import { useErrorMessage, useMe } from '@/lib/queries'
 import { PageHeader } from './app-layout'
 import { MissingCollection, siteQuery, useSiteCollection } from './site'
@@ -381,14 +383,16 @@ function EntryForm({
         {!deleted && <MissingSummary collection={collection} issues={issues} />}
       </div>
       <Card className="mt-4 p-5 sm:p-6">
-        <FieldList
-          fields={collection.fields}
-          value={data}
-          onChange={(next) => {
-            setData(next)
-            autosave.schedule(next)
-          }}
-        />
+        <ListIdsProvider>
+          <FieldList
+            fields={collection.fields}
+            value={data}
+            onChange={(next) => {
+              setData(next)
+              autosave.schedule(next)
+            }}
+          />
+        </ListIdsProvider>
       </Card>
     </EditorContext.Provider>
   )
@@ -408,7 +412,7 @@ export function EntryPage() {
   if (!collection) return <MissingCollection />
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className={cn('mx-auto', hasListEditor(collection.fields) ? 'max-w-6xl' : 'max-w-3xl')}>
       <EntryForm
         key={`${slug}:${entry.locale ?? ''}:${version}`}
         siteId={siteId}
@@ -458,7 +462,7 @@ export function NewEntryPage() {
   const collectionLabel = label(collection.label, collection.name)
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className={cn('mx-auto', hasListEditor(collection.fields) ? 'max-w-6xl' : 'max-w-3xl')}>
       <Breadcrumbs
         items={[
           { label: t('nav.websites'), to: '/' },
@@ -503,7 +507,9 @@ export function NewEntryPage() {
             </div>
           )}
           <Card className="p-5 sm:p-6">
-            <FieldList fields={collection.fields} value={data} onChange={setData} />
+            <ListIdsProvider>
+              <FieldList fields={collection.fields} value={data} onChange={setData} />
+            </ListIdsProvider>
           </Card>
           <div className="mt-4 flex justify-end">
             <Button type="submit" size="lg" loading={create.isPending}>

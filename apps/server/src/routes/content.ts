@@ -92,6 +92,8 @@ function clientCollection(c: Collection) {
     format: c.format,
     translated: !!c.translation,
     summary: c.summary ?? null,
+    sortBy: c.sortBy ?? null,
+    sortOrder: c.sortOrder,
     create: c.create,
     delete: c.delete,
     fields: c.fields,
